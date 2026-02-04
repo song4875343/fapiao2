@@ -352,6 +352,111 @@ class PDFMergerAPI:
             return {'success': True}
         except Exception as e:
             return {'success': False, 'error': str(e)}
+    
+    def print_pdf(self, file_path):
+        """打印PDF文件 - 尝试调用打印对话框"""
+        try:
+            import subprocess
+            import platform
+            import winreg
+            
+            file_path = str(file_path)
+            if not os.path.exists(file_path):
+                return {'success': False, 'error': '文件不存在'}
+            
+            system = platform.system()
+            
+            if system == 'Windows':
+                # 方法1: 尝试使用SumatraPDF（如果安装了）- 它支持打印对话框
+                try:
+                    # 常见的SumatraPDF安装路径
+                    sumatra_paths = [
+                        r'C:\Program Files\SumatraPDF\SumatraPDF.exe',
+                        r'C:\Program Files (x86)\SumatraPDF\SumatraPDF.exe',
+                    ]
+                    for sumatra_path in sumatra_paths:
+                        if os.path.exists(sumatra_path):
+                            # -print-dialog 参数会显示打印对话框
+                            subprocess.Popen([sumatra_path, '-print-dialog', file_path])
+                            return {'success': True, 'message': '已打开打印对话框'}
+                except:
+                    pass
+                
+                # 方法2: 尝试使用Adobe Reader（如果安装了）
+                try:
+                    # 查找Adobe Reader路径
+                    adobe_paths = [
+                        r'C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe',
+                        r'C:\Program Files (x86)\Adobe\Acrobat Reader DC\Reader\AcroRd32.exe',
+                        r'C:\Program Files\Adobe\Acrobat Reader DC\Reader\AcroRd32.exe',
+                    ]
+                    for adobe_path in adobe_paths:
+                        if os.path.exists(adobe_path):
+                            # /p 参数会显示打印对话框
+                            subprocess.Popen([adobe_path, '/p', file_path])
+                            return {'success': True, 'message': '已打开打印对话框'}
+                except:
+                    pass
+                
+                # 方法3: 尝试使用Foxit Reader（如果安装了）
+                try:
+                    foxit_paths = [
+                        r'C:\Program Files\Foxit Software\Foxit Reader\FoxitReader.exe',
+                        r'C:\Program Files (x86)\Foxit Software\Foxit Reader\FoxitReader.exe',
+                    ]
+                    for foxit_path in foxit_paths:
+                        if os.path.exists(foxit_path):
+                            subprocess.Popen([foxit_path, '/p', file_path])
+                            return {'success': True, 'message': '已打开打印对话框'}
+                except:
+                    pass
+                
+                # 方法4: 使用PowerShell调用打印对话框
+                try:
+                    ps_script = f'''
+Add-Type -AssemblyName System.Windows.Forms
+$file = "{file_path}"
+Start-Process -FilePath $file -Verb Print -Wait
+'''
+                    subprocess.Popen(['powershell', '-Command', ps_script], 
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+                    return {'success': True, 'message': '正在打开打印对话框...'}
+                except:
+                    pass
+                
+                # 降级方案: 直接打开PDF文件，让用户手动打印
+                os.startfile(file_path)
+                return {'success': True, 'message': '已打开PDF文件，请按 Ctrl+P 打印\n（未检测到支持的PDF阅读器）'}
+                
+            elif system == 'Darwin':  # macOS
+                # macOS: 使用lpr命令显示打印对话框
+                try:
+                    # -o 参数可以设置打印选项
+                    subprocess.run(['lpr', '-o', 'media=A4', '-o', 'fit-to-page', file_path])
+                    return {'success': True, 'message': '已发送到打印机'}
+                except:
+                    # 降级方案: 用Preview打开
+                    subprocess.run(['open', file_path])
+                    return {'success': True, 'message': '已打开PDF文件，请按 Cmd+P 打印'}
+                    
+            else:  # Linux
+                # Linux: 尝试使用打印对话框
+                try:
+                    # 尝试使用evince的打印功能
+                    subprocess.Popen(['evince', '--preview', file_path])
+                    return {'success': True, 'message': '已打开打印预览'}
+                except:
+                    try:
+                        # 降级到lpr
+                        subprocess.run(['lpr', '-o', 'media=A4', file_path])
+                        return {'success': True, 'message': '已发送到打印机'}
+                    except:
+                        # 最终降级: 打开文件
+                        subprocess.run(['xdg-open', file_path])
+                        return {'success': True, 'message': '已打开PDF文件，请按 Ctrl+P 打印'}
+        
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
 
     def calculate_invoice_amounts(self, pages_info):
         """从电子发票PDF中提取金额信息（按发票号去重，检测重复）"""

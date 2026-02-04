@@ -102,9 +102,10 @@ html_content = """
         .review-page { background-color: white; margin: 10px 0; box-shadow: 0 4px 10px rgba(0,0,0,0.3); width: 800px; min-height: 400px; transition: width 0.2s; position: relative; display: flex; align-items: center; justify-content: center; }
         .review-page img { width: 100%; display: block; min-height: 200px; }
         .review-loading { position: absolute; color: #999; font-size: 14px; z-index: 0; }
-        .review-toolbar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 10px 20px; border-radius: 30px; display: flex; gap: 15px; align-items: center; z-index: 100; }
-        .review-toolbar button { background: none; border: 1px solid #777; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; color: white;}
+        .review-toolbar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 10px 20px; border-radius: 30px; display: flex; gap: 15px; align-items: center; z-index: 100; white-space: nowrap; }
+        .review-toolbar button { background: none; border: 1px solid #777; padding: 6px 12px; border-radius: 4px; font-size: 13px; cursor: pointer; color: white; white-space: nowrap; }
         .review-toolbar button:hover { border-color: white; }
+        .review-toolbar span { white-space: nowrap; }
 
         .preview-modal, .common-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); z-index: 3000; display: none; flex-direction: column; }
         .common-modal { background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
@@ -170,6 +171,11 @@ html_content = """
                     <h2>工作台为空</h2>
                     <p>点击左上角“添加PDF文件”开始</p>
                     <p>拖拽框选，Ctrl+点击多选</p>
+                    <div style="margin-top: 25px; color: #95a5a6; font-size: 13px; line-height: 1.8; max-width: 500px;">
+                        <p style="margin: 5px 0;">• 将单文件发票每两张合并到一页A4纸，节省50%打印成本</p>
+                        <p style="margin: 5px 0;">• 对大量发票进行金额统计，自动识别发票号并去重</p>
+                        <p style="margin: 5px 0;">• 自动编写出租车发票报销单，智能分配日期和路线</p>
+                    </div>
                 </div>
                 <div id="pageGrid" class="page-grid"></div>
                 <div id="selectionBox" class="selection-box"></div>
@@ -181,6 +187,7 @@ html_content = """
                     <button onclick="reviewZoomOut()">-</button>
                     <span id="reviewZoomLevel">100%</span>
                     <button onclick="reviewZoomIn()">+</button>
+                    <button onclick="printCurrentFile()" style="margin-left: 15px;">🖨️ 打印</button>
                     <button onclick="switchToWorkspace()">关闭检查</button>
                 </div>
                 <div id="reviewContent" style="width: 100%; display: flex; flex-direction: column; align-items: center; padding-top: 50px;"></div>
@@ -506,6 +513,9 @@ html_content = """
         
         // 记录当前右键激活的列表项
         let activeContextItem = null;
+        
+        // 记录当前预览的文件路径
+        let currentReviewFilePath = null;
 
         function generateUUID() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }
 
@@ -1004,6 +1014,7 @@ html_content = """
         function findCachedThumb(path, index) { const p = allPages.find(x => x.path === path && x.pageIndex === index); if (p) { const el = document.getElementById(`img-${p.id}`); if (el && el.src.startsWith('data:')) return el.src; } return null; }
         
         async function loadReview(path) {
+            currentReviewFilePath = path;  // 保存当前预览的文件路径
             document.getElementById('workspaceView').style.display = 'none'; document.getElementById('reviewView').style.display = 'flex'; document.getElementById('btnBackEdit').style.display = 'block';
             const c = document.getElementById('reviewContent'); c.innerHTML = '<div style="color:white; margin-top:50px;">正在获取文件信息...</div>';
             if (reviewObserver) reviewObserver.disconnect();
@@ -1026,7 +1037,21 @@ html_content = """
 
         async function loadHighResImage(div, img) { if (div.dataset.loading === 'true') return; div.dataset.loading = 'true'; const res = await pywebview.api.get_page_image(div.dataset.path, parseInt(div.dataset.index), 5.0); if (res.success) { img.src = res.image; img.dataset.status = 'hd'; const l = div.querySelector('.review-loading'); if (l) l.remove(); } delete div.dataset.loading; }
         
-        function switchToWorkspace() { if (reviewObserver) reviewObserver.disconnect(); document.getElementById('reviewView').style.display = 'none'; document.getElementById('helpView').style.display = 'none'; document.getElementById('workspaceView').style.display = 'flex'; document.getElementById('btnBackEdit').style.display = 'none'; }
+        function switchToWorkspace() { if (reviewObserver) reviewObserver.disconnect(); document.getElementById('reviewView').style.display = 'none'; document.getElementById('helpView').style.display = 'none'; document.getElementById('workspaceView').style.display = 'flex'; document.getElementById('btnBackEdit').style.display = 'none'; currentReviewFilePath = null; }
+        
+        async function printCurrentFile() {
+            if (!currentReviewFilePath) {
+                alert('没有可打印的文件');
+                return;
+            }
+            
+            const result = await pywebview.api.print_pdf(currentReviewFilePath);
+            if (result.success) {
+                alert(result.message || '已发送到打印机');
+            } else {
+                alert('打印失败: ' + result.error);
+            }
+        }
         
         function showHelp() {
             document.getElementById('workspaceView').style.display = 'none';
