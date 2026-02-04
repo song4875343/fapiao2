@@ -313,12 +313,307 @@ class PDFMergerAPI:
             return {'success': True}
         except Exception as e:
             return {'success': False, 'error': str(e)}
+    
+    def save_reimbursement_csv(self, path, rows):
+        """保存报销单到CSV文件"""
+        try:
+            with open(path, 'w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                # 写入表头
+                writer.writerow(['序号', '发票号', '人数', '日期', '起点', '终点', '票额'])
+                # 写入数据
+                total = 0.0
+                for r in rows:
+                    writer.writerow([r['id'], r.get('invoiceNo', '未识别'), r['people'], r['date'], r['start'], r['end'], r['amount']])
+                    total += float(r['amount'])
+                
+                # 写入合计行
+                writer.writerow(['', '', '', '', '', '合计', f'{total:.2f}'])
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def save_statistics_csv(self, path, amounts):
+        """保存统计数据到CSV文件"""
+        try:
+            with open(path, 'w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                # 写入表头
+                writer.writerow(['序号', '发票号', '来源页面', '金额'])
+                # 写入数据
+                total = 0.0
+                for idx, item in enumerate(amounts):
+                    pages_str = ', '.join(item.get('pages', []))
+                    writer.writerow([idx + 1, item.get('invoiceNo', '未识别'), pages_str, item['amount']])
+                    total += float(item['amount'])
+                
+                # 写入合计行
+                writer.writerow(['', '', '合计（已去重）', f'{total:.2f}'])
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def calculate_invoice_amounts(self, pages_info):
+        """从电子发票PDF中提取金额信息（按发票号去重，检测重复）"""
+        try:
+            import re
+            import fitz
+            
+            # 用于去重的字典：{invoice_no: {'amount': xxx, 'pages': [...], 'fileName': xxx, 'pageIndex': xxx}}
+            invoice_dict = {}
+            unrecognized_invoices = []  # 未识别到发票号的
+            
+            for idx, page_info in enumerate(pages_info):
+                path = page_info['path']
+                page_index = page_info['pageIndex']
+                file_name = page_info['fileName']
+                page_label = f"{file_name}-P{page_index+1}"
+                
+                if not os.path.exists(path):
+                    unrecognized_invoices.append({
+                        'amount': '0.00',
+                        'invoiceNo': '文件不存在',
+                        'pages': [page_label],
+                        'isDuplicate': False,
+                        'fileName': file_name,
+                        'pageIndex': page_index
+                    })
+                    continue
+                
+                try:
+                    doc = fitz.open(path)
+                    
+                    if page_index >= doc.page_count:
+                        unrecognized_invoices.append({
+                            'amount': '0.00',
+                            'invoiceNo': '页码越界',
+                            'pages': [page_label],
+                            'isDuplicate': False,
+                            'fileName': file_name,
+                            'pageIndex': page_index
+                        })
+                        doc.close()
+                        continue
+                    
+                    page = doc[page_index]
+                    text = page.get_text()
+                    
+                    # 提取发票号码（使用坐标定位，更准确）
+                    invoice_no = None
+                    
+                    try:
+                        # 获取页面上所有文本块及其坐标
+                        blocks = page.get_text("dict")["blocks"]
+                        
+                        # 查找"发票号码"关键字的位置
+                        keyword_rect = None
+                        for block in blocks:
+                            if "lines" in block:
+                                for line in block["lines"]:
+                                    for span in line["spans"]:
+                                        text_content = span["text"]
+                                        if "发票号码" in text_content:
+                                            keyword_rect = span["bbox"]  # (x0, y0, x1, y1)
+                                            break
+                                    if keyword_rect:
+                                        break
+                            if keyword_rect:
+                                break
+                        
+                        # 如果找到了"发票号码"，查找同一行右侧的数字
+                        if keyword_rect:
+                            kw_y0, kw_y1 = keyword_rect[1], keyword_rect[3]
+                            kw_x1 = keyword_rect[2]  # 关键字右边界
+                            
+                            # 查找与"发票号码"在同一水平线上的文本
+                            candidates = []
+                            for block in blocks:
+                                if "lines" in block:
+                                    for line in block["lines"]:
+                                        for span in line["spans"]:
+                                            span_bbox = span["bbox"]
+                                            span_y0, span_y1 = span_bbox[1], span_bbox[3]
+                                            span_x0 = span_bbox[0]
+                                            span_text = span["text"].strip()
+                                            
+                                            # 判断是否在同一行（Y坐标接近）
+                                            y_overlap = not (span_y1 < kw_y0 or span_y0 > kw_y1)
+                                            # 在关键字右侧
+                                            is_right = span_x0 >= kw_x1 - 10  # 允许10像素误差
+                                            # 是数字
+                                            is_number = span_text.isdigit() and len(span_text) >= 8
+                                            
+                                            if y_overlap and is_right and is_number:
+                                                # 记录候选项：(距离, 文本)
+                                                distance = span_x0 - kw_x1
+                                                candidates.append((distance, span_text))
+                            
+                            # 选择距离最近的数字
+                            if candidates:
+                                candidates.sort(key=lambda x: x[0])
+                                invoice_no = candidates[0][1]
+                    
+                    except Exception as e:
+                        print(f"坐标定位失败: {e}")
+                    
+                    # 备用方案：如果坐标定位失败，使用简单的数字查找
+                    if not invoice_no:
+                        # 查找20位数字
+                        matches_20 = re.findall(r'\b(\d{20})\b', text)
+                        if matches_20:
+                            invoice_no = matches_20[0]
+                        # 查找18-19位数字
+                        elif not invoice_no:
+                            matches_18_19 = re.findall(r'\b(\d{18,19})\b', text)
+                            if matches_18_19:
+                                invoice_no = matches_18_19[0]
+                    
+                    # 提取金额（使用坐标定位，查找"小写"后面的金额）
+                    amount = '0.00'
+                    try:
+                        # 查找"小写"关键字的位置
+                        amount_keyword_rect = None
+                        for block in blocks:
+                            if "lines" in block:
+                                for line in block["lines"]:
+                                    for span in line["spans"]:
+                                        text_content = span["text"]
+                                        if "小写" in text_content:
+                                            amount_keyword_rect = span["bbox"]
+                                            break
+                                    if amount_keyword_rect:
+                                        break
+                            if amount_keyword_rect:
+                                break
+                        
+                        # 如果找到了"小写"，查找同一行右侧的金额
+                        if amount_keyword_rect:
+                            kw_y0, kw_y1 = amount_keyword_rect[1], amount_keyword_rect[3]
+                            kw_x1 = amount_keyword_rect[2]
+                            
+                            amount_candidates = []
+                            for block in blocks:
+                                if "lines" in block:
+                                    for line in block["lines"]:
+                                        for span in line["spans"]:
+                                            span_bbox = span["bbox"]
+                                            span_y0, span_y1 = span_bbox[1], span_bbox[3]
+                                            span_x0 = span_bbox[0]
+                                            span_text = span["text"].strip()
+                                            
+                                            # 判断是否在同一行
+                                            y_overlap = not (span_y1 < kw_y0 or span_y0 > kw_y1)
+                                            # 在关键字右侧
+                                            is_right = span_x0 >= kw_x1 - 10
+                                            
+                                            # 检查是否包含金额（¥或￥符号）
+                                            if y_overlap and is_right and ('¥' in span_text or '￥' in span_text):
+                                                # 提取数字部分
+                                                amount_match = re.search(r'[¥￥]\s*([\d,]+\.?\d*)', span_text)
+                                                if amount_match:
+                                                    amount_str = amount_match.group(1).replace(',', '')
+                                                    try:
+                                                        amount_val = float(amount_str)
+                                                        distance = span_x0 - kw_x1
+                                                        amount_candidates.append((distance, amount_val))
+                                                    except:
+                                                        pass
+                            
+                            # 选择距离最近的金额
+                            if amount_candidates:
+                                amount_candidates.sort(key=lambda x: x[0])
+                                amount = f'{amount_candidates[0][1]:.2f}'
+                    
+                    except Exception as e:
+                        print(f"金额坐标定位失败: {e}")
+                    
+                    # 备用方案：如果坐标定位失败，使用正则匹配
+                    if amount == '0.00':
+                        amount_patterns = [
+                            r'小写[：:\s]*[¥￥]\s*([\d,]+\.?\d*)',
+                            r'价税合计[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)',
+                            r'合计[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)',
+                        ]
+                        
+                        for pattern in amount_patterns:
+                            matches = re.findall(pattern, text)
+                            if matches:
+                                amounts = [float(m.replace(',', '')) for m in matches if m]
+                                if amounts:
+                                    amount = f'{max(amounts):.2f}'
+                                    break
+                    
+                    # 根据发票号去重
+                    if invoice_no:
+                        if invoice_no in invoice_dict:
+                            # 重复发票，只记录页面位置
+                            invoice_dict[invoice_no]['pages'].append(page_label)
+                            invoice_dict[invoice_no]['isDuplicate'] = True
+                        else:
+                            # 首次出现
+                            invoice_dict[invoice_no] = {
+                                'amount': amount,
+                                'invoiceNo': invoice_no,
+                                'pages': [page_label],
+                                'isDuplicate': False,
+                                'fileName': file_name,
+                                'pageIndex': page_index
+                            }
+                    else:
+                        # 未识别到发票号
+                        unrecognized_invoices.append({
+                            'amount': amount,
+                            'invoiceNo': '未识别',
+                            'pages': [page_label],
+                            'isDuplicate': False,
+                            'fileName': file_name,
+                            'pageIndex': page_index
+                        })
+                    
+                    doc.close()
+                    
+                except Exception as e:
+                    unrecognized_invoices.append({
+                        'amount': '0.00',
+                        'invoiceNo': f'错误: {str(e)}',
+                        'pages': [page_label],
+                        'isDuplicate': False,
+                        'fileName': file_name,
+                        'pageIndex': page_index
+                    })
+            
+            # 合并结果（去重后的发票 + 未识别的）
+            results = list(invoice_dict.values()) + unrecognized_invoices
+            
+            # 计算去重后的总金额
+            total_amount = sum(float(item['amount']) for item in results)
+            
+            # 统计重复详情
+            duplicate_details = []
+            for item in invoice_dict.values():
+                if item['isDuplicate']:
+                    duplicate_details.append({
+                        'invoiceNo': item['invoiceNo'],
+                        'amount': item['amount'],
+                        'count': len(item['pages']),
+                        'pages': item['pages']
+                    })
+            
+            return {
+                'success': True,
+                'amounts': results,
+                'totalAmount': f'{total_amount:.2f}',
+                'duplicateDetails': duplicate_details
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
 
 
 if __name__ == '__main__':
     api = PDFMergerAPI()
     window = webview.create_window(
-        'PDF合并工具 - 专业版',
+        '发票打印工具 - 专业版',
         html=ui.html_content,
         width=1200,
         height=800,
