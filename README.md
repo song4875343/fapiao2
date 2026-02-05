@@ -36,13 +36,13 @@
 
 | 文件名              | 说明                                                                          |
 | :------------------ | :---------------------------------------------------------------------------- |
-| **`pdfm_v3.py`**    | **主程序入口**。负责 GUI 窗口创建、API 接口定义以及 Python 与 JS 的交互逻辑。 |
+| **`pdfm_v3.py`**    | **主程序入口**。支持本地模式和服务器模式，通过 `--server` 参数切换。 |
+| **`server.py`**     | **FastAPI 服务器**。提供 RESTful API，支持浏览器访问。    |
+| **`shim.js`**       | **环境适配层**。自动检测运行环境，透明切换本地/远程 API 调用。    |
 | **`filltable.py`**  | **报销逻辑模块**。负责发票金额解析、路线匹配算法、日期生成及配置文件管理。    |
 | **`ui.py`**         | **界面资源模块**。存放所有的 HTML、CSS 和 JavaScript 代码，保持主程序整洁。   |
 | **`help.html`**     | **帮助文档**。完整的使用指南和功能说明，可在应用内直接查看。                  |
 | `route_config.json` | 自动生成的配置文件，存储用户的自定义报销路线信息。                            |
-| `pdfm_v1.py`        | 历史版本（功能基础，仅供参考）。                                              |
-| `pdfm_v2.py`        | 历史版本（增加了编辑功能，但 UI 较旧）。                                      |
 
 ## 🚀 安装与运行
 
@@ -53,19 +53,43 @@
 
 ### 2. 安装依赖
 
-本项目已移除 `pdfplumber`，全面拥抱 `PyMuPDF` (fitz) 以获得更快的速度。
+```bash
+pip install -r requirements.txt
+```
+
+或手动安装：
 
 ```bash
-pip install pywebview PyMuPDF PyPDF2
+pip install pywebview PyMuPDF PyPDF2 fastapi uvicorn python-multipart
 ```
 
 ### 3. 运行程序
 
-直接运行 v3 版本即可体验最新功能：
+**本地模式（推荐）**：
 
 ```bash
 python pdfm_v3.py
 ```
+
+直接启动桌面应用，无需浏览器。
+
+**服务器模式**：
+
+```bash
+python pdfm_v3.py --server
+```
+
+或使用快捷脚本：
+
+```bash
+# Windows CMD
+run_server.bat
+
+# Windows PowerShell
+.\run_server.ps1
+```
+
+启动后在浏览器访问 `http://localhost:8000` 即可使用。支持局域网内多设备访问。
 
 ## 📖 使用指南
 
@@ -86,12 +110,23 @@ python pdfm_v3.py
 
 ## 🛠️ 技术亮点
 
+- **双模式架构**：本地桌面应用（pywebview）+ 浏览器模式（FastAPI），一套代码两种使用方式。
+- **透明适配层**：`shim.js` 自动检测运行环境，无缝切换本地 API 和远程 API 调用。
 - **UI/Logic 分离**：界面代码存放于 `ui.py`，逻辑清晰。
 - **Lazy Loading (懒加载)**：列表检查模式下使用 `IntersectionObserver`，仅当图片进入视口时才渲染，极大降低内存占用。
 - **Blur-up 技术**：预览大图时优先显示低清缩略图，视觉体验极佳。
 - **纯原生依赖**：剪贴板复制功能兼容 HTTP/HTTPS 及本地环境，无需额外系统库。
 
 ## 📝 更新日志
+
+**v3.3.0**
+
+- ✨ 新增服务器模式：支持通过浏览器访问，可在局域网内多设备使用。
+- 🔧 实现环境适配层（shim.js）：自动检测运行环境，透明切换 API 调用方式。
+- 🌐 创建 FastAPI 服务端（server.py）：提供完整的 RESTful API 支持。
+- 📁 浏览器模式支持 File System Access API：现代浏览器可选择文件保存位置。
+- 🖨️ 优化打印功能：浏览器模式下支持直接打印合并后的 PDF。
+- 🎨 统一预览体验：所有预览模式保持一致的页面图片显示风格。
 
 **v3.2.0**
 
@@ -113,4 +148,15 @@ python pdfm_v3.py
 
 ---
 
-*Developed with ❤️ using Python & pywebview.***直接运行 v3 版本即可体验最新功能：**
+## 💡 使用场景
+
+**本地模式**：适合个人日常使用，启动快速，无需网络。
+
+**服务器模式**：适合以下场景：
+- 在服务器上部署，团队成员通过浏览器访问
+- 需要在平板、手机等移动设备上使用
+- 跨平台使用（服务器运行在 Linux，客户端使用 Windows/Mac 浏览器）
+
+---
+
+*Developed with ❤️ using Python & pywebview.*

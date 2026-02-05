@@ -1568,23 +1568,92 @@ html_content = """
         
         async function loadReview(path) {
             currentReviewFilePath = path;  // 保存当前预览的文件路径
-            document.getElementById('workspaceView').style.display = 'none'; document.getElementById('reviewView').style.display = 'flex'; document.getElementById('btnBackEdit').style.display = 'block';
-            const c = document.getElementById('reviewContent'); c.innerHTML = '<div style="color:white; margin-top:50px;">正在获取文件信息...</div>';
-            if (reviewObserver) reviewObserver.disconnect();
-            const info = await pywebview.api.get_file_info(path);
-            if (!info.success) { c.innerHTML = `<div style="color:red; margin-top:50px;">错误：${info.error}</div>`; return; }
-            c.innerHTML = ''; currentReviewZoom = 1.0; updateReviewZoomUI();
             
-            for (let i = 0; i < info.page_count; i++) {
-                const div = document.createElement('div'); div.className = 'review-page'; div.style.width = BASE_WIDTH + 'px'; div.dataset.path = path; div.dataset.index = i;
-                let src = findCachedThumb(path, i); if (!src && i === 0 && historyCache[path]) src = historyCache[path];
-                const img = document.createElement('img'); img.alt = `Page ${i+1}`;
-                if (src) { img.src = src; img.dataset.status = 'thumb'; } else { img.src = ''; div.innerHTML += '<span class="review-loading">等待加载...</span>'; }
-                div.appendChild(img); c.appendChild(div);
+            // 切换到预览视图
+            document.getElementById('workspaceView').style.display = 'none';
+            document.getElementById('reviewView').style.display = 'flex';
+            document.getElementById('btnBackEdit').style.display = 'block';
+            
+            const c = document.getElementById('reviewContent');
+            c.innerHTML = '<div style="color:white; margin-top:50px;">正在获取文件信息...</div>';
+            if (reviewObserver) reviewObserver.disconnect();
+            
+            // 获取文件信息
+            const info = await pywebview.api.get_file_info(path);
+            if (!info.success) {
+                c.innerHTML = `<div style="color:red; margin-top:50px;">错误：${info.error}</div>`;
+                return;
             }
-            const prioritizeVisibles = async () => { const n = Array.from(c.querySelectorAll('.review-page')).slice(0, 2); for (const div of n) { const img = div.querySelector('img'); if (!img.src) { const r = await pywebview.api.get_page_image(div.dataset.path, div.dataset.index, 0.5); if (r.success) { img.src = r.image; img.dataset.status = 'thumb'; } } loadHighResImage(div, img); } };
+            
+            c.innerHTML = '';
+            currentReviewZoom = 1.0;
+            updateReviewZoomUI();
+            
+            // ========== 统一使用图片方式显示（无论是源文件还是合并文件） ==========
+            for (let i = 0; i < info.page_count; i++) {
+                const div = document.createElement('div');
+                div.className = 'review-page';
+                div.style.width = BASE_WIDTH + 'px';
+                div.dataset.path = path;
+                div.dataset.index = i;
+                
+                // 尝试从缓存获取缩略图
+                let src = findCachedThumb(path, i);
+                if (!src && i === 0 && historyCache[path]) {
+                    src = historyCache[path];
+                }
+                
+                const img = document.createElement('img');
+                img.alt = `Page ${i+1}`;
+                
+                if (src) {
+                    img.src = src;
+                    img.dataset.status = 'thumb';
+                } else {
+                    img.src = '';
+                    div.innerHTML += '<span class="review-loading">等待加载...</span>';
+                }
+                
+                div.appendChild(img);
+                c.appendChild(div);
+            }
+            
+            // 优先加载前两页
+            const prioritizeVisibles = async () => {
+                const n = Array.from(c.querySelectorAll('.review-page')).slice(0, 2);
+                for (const div of n) {
+                    const img = div.querySelector('img');
+                    if (!img.src) {
+                        const r = await pywebview.api.get_page_image(div.dataset.path, div.dataset.index, 0.5);
+                        if (r.success) {
+                            img.src = r.image;
+                            img.dataset.status = 'thumb';
+                        }
+                    }
+                    loadHighResImage(div, img);
+                }
+            };
+            
             prioritizeVisibles();
-            reviewObserver = new IntersectionObserver((entries, observer) => { entries.forEach(entry => { if (entry.isIntersecting) { const div = entry.target; const img = div.querySelector('img'); if (!img.src || img.dataset.status === 'thumb') loadHighResImage(div, img); observer.unobserve(div); } }); }, { root: document.getElementById('reviewView'), rootMargin: '200px', threshold: 0.01 });
+            
+            // 懒加载其他页面
+            reviewObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const div = entry.target;
+                        const img = div.querySelector('img');
+                        if (!img.src || img.dataset.status === 'thumb') {
+                            loadHighResImage(div, img);
+                        }
+                        observer.unobserve(div);
+                    }
+                });
+            }, {
+                root: document.getElementById('reviewView'),
+                rootMargin: '200px',
+                threshold: 0.01
+            });
+            
             document.querySelectorAll('.review-page').forEach(div => reviewObserver.observe(div));
         }
 
@@ -1611,26 +1680,53 @@ html_content = """
                 return;
             }
             
+            console.log('🖨️ 准备打印文件:', currentReviewFilePath);
+            
             const btn = document.querySelector('.review-toolbar button[onclick="printCurrentFile()"]');
             const originalText = btn ? btn.innerText : '🖨️ 打印';
             if (btn) btn.innerText = '⌛ 处理中...';
             
             try {
-                // 1. 获取 Base64 数据
-                const result = await pywebview.api.print_pdf(currentReviewFilePath);
-                if (!result.success) {
-                    alert('打印失败: ' + result.error);
+                let pdfData = null;
+                let blobUrl = null;
+                
+                // ========== 优先从缓存获取 ==========
+                if (window.mergedFilesCache && window.mergedFilesCache[currentReviewFilePath]) {
+                    console.log('✅ 从前端缓存获取PDF数据用于打印');
+                    const cached = window.mergedFilesCache[currentReviewFilePath];
+                    
+                    // 使用已有的 Blob URL 或创建新的
+                    if (cached.blobUrl) {
+                        blobUrl = cached.blobUrl;
+                    } else {
+                        blobUrl = URL.createObjectURL(cached.blob);
+                        cached.blobUrl = blobUrl;
+                    }
+                } else {
+                    // ========== 从服务器获取 ==========
+                    console.log('📡 从服务器获取PDF数据用于打印');
+                    const result = await pywebview.api.print_pdf(currentReviewFilePath);
+                    if (!result.success) {
+                        alert('打印失败: ' + result.error);
+                        if (btn) btn.innerText = originalText;
+                        return;
+                    }
+                    pdfData = result.data;
+                    
+                    // 转换为 Blob URL
+                    const blob = base64ToBlob(pdfData);
+                    blobUrl = URL.createObjectURL(blob);
+                }
+                
+                if (!blobUrl) {
+                    alert('没有可以打印的文件');
                     if (btn) btn.innerText = originalText;
                     return;
                 }
                 
-                // 2. 转换 Blob
-                const blob = base64ToBlob(result.data);
-                const blobUrl = URL.createObjectURL(blob);
+                console.log('✅ PDF 数据已准备，创建打印 iframe');
                 
-                // 3. 创建 iframe
-                // 技巧：不要用 display:none，也不要移出太远导致浏览器认为不可见而不渲染
-                // 设置为固定定位，透明度为0，这样它在屏幕上但不可见
+                // 创建 iframe
                 const iframe = document.createElement('iframe');
                 iframe.style.position = 'fixed';
                 iframe.style.right = '0';
@@ -1641,7 +1737,7 @@ html_content = """
                 iframe.style.opacity = '0.01';
                 iframe.style.pointerEvents = 'none';
                 
-                // 4. 加载并打印
+                // 加载并打印
                 iframe.src = blobUrl;
                 document.body.appendChild(iframe);
                 
@@ -1650,6 +1746,7 @@ html_content = """
                     try {
                         iframe.contentWindow.focus();
                         iframe.contentWindow.print();
+                        console.log('✅ 打印对话框已调用');
                     } catch (e) {
                         console.error("打印调用被拦截:", e);
                         // 降级方案：如果iframe打印失败，尝试在新窗口打开让用户手动打印
@@ -1659,8 +1756,9 @@ html_content = """
                     }
                 };
                 
-                // 5. 等待加载
+                // 等待加载
                 iframe.onload = function() {
+                    console.log('✅ iframe 已加载');
                     setTimeout(() => {
                         doPrint();
                         
@@ -1672,7 +1770,10 @@ html_content = """
                             if (document.body.contains(iframe)) {
                                 document.body.removeChild(iframe);
                             }
-                            URL.revokeObjectURL(blobUrl);
+                            // 只清理非缓存的 URL
+                            if (!window.mergedFilesCache || !window.mergedFilesCache[currentReviewFilePath]) {
+                                URL.revokeObjectURL(blobUrl);
+                            }
                         }, 60000); // 给用户1分钟时间在打印预览框操作
                     }, 500);
                 };
@@ -1684,7 +1785,9 @@ html_content = """
                     if (document.body.contains(iframe)) {
                         document.body.removeChild(iframe);
                     }
-                    URL.revokeObjectURL(blobUrl);
+                    if (!window.mergedFilesCache || !window.mergedFilesCache[currentReviewFilePath]) {
+                        URL.revokeObjectURL(blobUrl);
+                    }
                     if (btn) btn.innerText = originalText;
                 };
                 

@@ -657,38 +657,70 @@ class PDFMergerAPI:
 
 
 if __name__ == '__main__':
-    api = PDFMergerAPI()
+    import argparse
     
-    # --- 关键修改：将 HTML 写入临时文件，赋予页面合法的 file:// Origin ---
-    # 1. 获取当前运行目录
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='PDF Merger Tool')
+    parser.add_argument('--server', action='store_true', help='启动 FastAPI 服务器模式')
+    parser.add_argument('--port', type=int, default=8000, help='服务器端口 (默认: 8000)')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='服务器地址 (默认: 0.0.0.0)')
+    args = parser.parse_args()
     
-    # 2. 定义临时HTML文件路径
-    temp_html_path = os.path.join(base_dir, 'app_gui_temp.html')
-    
-    # 3. 将 ui.py 中的 HTML 字符串写入文件
-    # 这样浏览器就会以 file:// 协议加载它，从而拥有合法的 Origin
-    with open(temp_html_path, 'w', encoding='utf-8') as f:
-        f.write(ui.html_content)
-    
-    # 4. 创建窗口时，使用 url 参数加载本地文件，而不是 html 参数
-    window = webview.create_window(
-        '发票打印工具 - 专业版 v3.3',
-        url=temp_html_path,  # 改为 url，加载本地文件
-        width=1200,
-        height=800,
-        resizable=True,
-        js_api=api
-    )
-    
-    # 退出时尝试清理临时文件
-    def on_closed():
+    if args.server:
+        # ==================== 服务器模式 ====================
+        print("=" * 60)
+        print("🚀 启动 FastAPI 服务器模式...")
+        print("=" * 60)
+        
         try:
-            if os.path.exists(temp_html_path):
-                os.remove(temp_html_path)
-        except:
-            pass
-    
-    window.events.closed += on_closed
-    
-    webview.start(debug=False)  # 开启调试模式，可以右键检查元素查看控制台
+            import uvicorn
+            from server import app
+            
+            print(f"🌐 访问地址: http://localhost:{args.port}")
+            print(f"📖 API 文档: http://localhost:{args.port}/docs")
+            print("=" * 60)
+            print("💡 提示：在浏览器中打开上述地址即可使用")
+            print("=" * 60)
+            
+            uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        except ImportError:
+            print("❌ 错误：缺少依赖")
+            print("请安装：pip install fastapi uvicorn")
+            sys.exit(1)
+    else:
+        # ==================== 本地模式 (pywebview) ====================
+        api = PDFMergerAPI()
+        
+        # --- 关键修改：将 HTML 写入临时文件，赋予页面合法的 file:// Origin ---
+        # 1. 获取当前运行目录
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # 2. 定义临时HTML文件路径
+        temp_html_path = os.path.join(base_dir, 'app_gui_temp.html')
+        
+        # 3. 将 ui.py 中的 HTML 字符串写入文件
+        # 这样浏览器就会以 file:// 协议加载它，从而拥有合法的 Origin
+        with open(temp_html_path, 'w', encoding='utf-8') as f:
+            f.write(ui.html_content)
+        
+        # 4. 创建窗口时，使用 url 参数加载本地文件，而不是 html 参数
+        window = webview.create_window(
+            '发票打印工具 - 专业版 v3.3',
+            url=temp_html_path,  # 改为 url，加载本地文件
+            width=1200,
+            height=800,
+            resizable=True,
+            js_api=api
+        )
+        
+        # 退出时尝试清理临时文件
+        def on_closed():
+            try:
+                if os.path.exists(temp_html_path):
+                    os.remove(temp_html_path)
+            except:
+                pass
+        
+        window.events.closed += on_closed
+        
+        webview.start(debug=False)  # 开启调试模式，可以右键检查元素查看控制台
