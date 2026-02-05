@@ -549,6 +549,28 @@ html_content = """
     </div>
 
     <script>
+        // ========== 辅助函数：Base64 转 Blob ==========
+        // 用于解决浏览器跨域安全限制
+        function base64ToBlob(base64Data) {
+            // 1. 去掉 data:application/pdf;base64, 前缀（如果有）
+            const arr = base64Data.split(',');
+            const data = arr.length > 1 ? arr[1] : arr[0];
+            
+            // 2. 解码 Base64
+            const byteString = atob(data);
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            
+            // 3. 转换为字节数组
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            
+            // 4. 生成 Blob 对象
+            return new Blob([ab], { type: 'application/pdf' });
+        }
+        
+        // ========== 全局变量 ==========
         let allPages = [];
         let sourceFiles = [];
         let historyFiles = [];
@@ -1589,11 +1611,87 @@ html_content = """
                 return;
             }
             
-            const result = await pywebview.api.print_pdf(currentReviewFilePath);
-            if (result.success) {
-                alert(result.message || '已发送到打印机');
-            } else {
-                alert('打印失败: ' + result.error);
+            const btn = document.querySelector('.review-toolbar button[onclick="printCurrentFile()"]');
+            const originalText = btn ? btn.innerText : '🖨️ 打印';
+            if (btn) btn.innerText = '⌛ 处理中...';
+            
+            try {
+                // 1. 获取 Base64 数据
+                const result = await pywebview.api.print_pdf(currentReviewFilePath);
+                if (!result.success) {
+                    alert('打印失败: ' + result.error);
+                    if (btn) btn.innerText = originalText;
+                    return;
+                }
+                
+                // 2. 转换 Blob
+                const blob = base64ToBlob(result.data);
+                const blobUrl = URL.createObjectURL(blob);
+                
+                // 3. 创建 iframe
+                // 技巧：不要用 display:none，也不要移出太远导致浏览器认为不可见而不渲染
+                // 设置为固定定位，透明度为0，这样它在屏幕上但不可见
+                const iframe = document.createElement('iframe');
+                iframe.style.position = 'fixed';
+                iframe.style.right = '0';
+                iframe.style.bottom = '0';
+                iframe.style.width = '1px';
+                iframe.style.height = '1px';
+                iframe.style.border = 'none';
+                iframe.style.opacity = '0.01';
+                iframe.style.pointerEvents = 'none';
+                
+                // 4. 加载并打印
+                iframe.src = blobUrl;
+                document.body.appendChild(iframe);
+                
+                // 定义打印逻辑
+                const doPrint = () => {
+                    try {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    } catch (e) {
+                        console.error("打印调用被拦截:", e);
+                        // 降级方案：如果iframe打印失败，尝试在新窗口打开让用户手动打印
+                        if (confirm("自动打印被拦截。是否在新窗口打开PDF进行打印？")) {
+                            window.open(blobUrl, '_blank');
+                        }
+                    }
+                };
+                
+                // 5. 等待加载
+                iframe.onload = function() {
+                    setTimeout(() => {
+                        doPrint();
+                        
+                        // 恢复按钮
+                        if (btn) btn.innerText = originalText;
+                        
+                        // 延迟清理
+                        setTimeout(() => {
+                            if (document.body.contains(iframe)) {
+                                document.body.removeChild(iframe);
+                            }
+                            URL.revokeObjectURL(blobUrl);
+                        }, 60000); // 给用户1分钟时间在打印预览框操作
+                    }, 500);
+                };
+                
+                // 错误处理
+                iframe.onerror = function() {
+                    console.error('PDF加载失败');
+                    alert('PDF文件加载失败，无法打印');
+                    if (document.body.contains(iframe)) {
+                        document.body.removeChild(iframe);
+                    }
+                    URL.revokeObjectURL(blobUrl);
+                    if (btn) btn.innerText = originalText;
+                };
+                
+            } catch (e) {
+                console.error('打印出错:', e);
+                alert('程序错误: ' + e.message);
+                if (btn) btn.innerText = originalText;
             }
         }
         
