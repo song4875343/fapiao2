@@ -319,16 +319,16 @@ class PDFMergerAPI:
         try:
             with open(path, 'w', newline='', encoding='utf-8-sig') as f:
                 writer = csv.writer(f)
-                # 写入表头
-                writer.writerow(['序号', '发票号', '人数', '日期', '起点', '终点', '票额'])
+                # 写入表头（增加来源列）
+                writer.writerow(['序号', '发票号', '来源', '人数', '日期', '起点', '终点', '票额'])
                 # 写入数据
                 total = 0.0
                 for r in rows:
-                    writer.writerow([r['id'], r.get('invoiceNo', '未识别'), r['people'], r['date'], r['start'], r['end'], r['amount']])
+                    writer.writerow([r['id'], r.get('invoiceNo', '未识别'), r.get('source', ''), r['people'], r['date'], r['start'], r['end'], r['amount']])
                     total += float(r['amount'])
                 
                 # 写入合计行
-                writer.writerow(['', '', '', '', '', '合计', f'{total:.2f}'])
+                writer.writerow(['', '', '', '', '', '', '合计', f'{total:.2f}'])
             return {'success': True}
         except Exception as e:
             return {'success': False, 'error': str(e)}
@@ -468,6 +468,11 @@ Start-Process -FilePath $file -Verb Print -Wait
             invoice_dict = {}
             unrecognized_invoices = []  # 未识别到发票号的
             
+            # 校验：统计选中的文件数量
+            selected_files = set()
+            for page_info in pages_info:
+                selected_files.add(page_info['path'])
+            
             for idx, page_info in enumerate(pages_info):
                 path = page_info['path']
                 page_index = page_info['pageIndex']
@@ -596,7 +601,8 @@ Start-Process -FilePath $file -Verb Print -Wait
                             kw_y0, kw_y1 = amount_keyword_rect[1], amount_keyword_rect[3]
                             kw_x1 = amount_keyword_rect[2]
                             
-                            amount_candidates = []
+                            # 收集同一行的所有文本块
+                            same_line_spans = []
                             for block in blocks:
                                 if "lines" in block:
                                     for line in block["lines"]:
@@ -606,28 +612,23 @@ Start-Process -FilePath $file -Verb Print -Wait
                                             span_x0 = span_bbox[0]
                                             span_text = span["text"].strip()
                                             
-                                            # 判断是否在同一行
                                             y_overlap = not (span_y1 < kw_y0 or span_y0 > kw_y1)
-                                            # 在关键字右侧
                                             is_right = span_x0 >= kw_x1 - 10
                                             
-                                            # 检查是否包含金额（¥或￥符号）
-                                            if y_overlap and is_right and ('¥' in span_text or '￥' in span_text):
-                                                # 提取数字部分
-                                                amount_match = re.search(r'[¥￥]\s*([\d,]+\.?\d*)', span_text)
-                                                if amount_match:
-                                                    amount_str = amount_match.group(1).replace(',', '')
-                                                    try:
-                                                        amount_val = float(amount_str)
-                                                        distance = span_x0 - kw_x1
-                                                        amount_candidates.append((distance, amount_val))
-                                                    except:
-                                                        pass
+                                            if y_overlap and is_right and span_text:
+                                                same_line_spans.append((span_x0, span_text))
                             
-                            # 选择距离最近的金额
-                            if amount_candidates:
-                                amount_candidates.sort(key=lambda x: x[0])
-                                amount = f'{amount_candidates[0][1]:.2f}'
+                            # 按X坐标排序，拼接文本
+                            same_line_spans.sort(key=lambda x: x[0])
+                            combined_text = ' '.join([text for _, text in same_line_spans])
+                            
+                            # 从拼接后的文本中提取金额
+                            amount_match = re.search(r'[¥￥]\s*([\d,]+\.?\d*)', combined_text)
+                            if amount_match:
+                                try:
+                                    amount = float(amount_match.group(1).replace(',', ''))
+                                except:
+                                    pass
                     
                     except Exception as e:
                         print(f"金额坐标定位失败: {e}")
@@ -704,11 +705,35 @@ Start-Process -FilePath $file -Verb Print -Wait
                         'pages': item['pages']
                     })
             
+            # 校验：检查识别数量与选中文件数量
+            recognized_count = len(results)
+            selected_count = len(pages_info)
+            validation_warning = None
+            unrecognized_files = []
+            
+            if recognized_count < selected_count:
+                # 找出哪些文件/页面未被正确识别
+                for page_info in pages_info:
+                    page_label = f"{page_info['fileName']}-P{page_info['pageIndex']+1}"
+                    found = False
+                    for item in results:
+                        if page_label in item['pages']:
+                            found = True
+                            break
+                    if not found:
+                        unrecognized_files.append(page_label)
+                
+                validation_warning = f"警告：选中了{selected_count}个页面，但只识别出{recognized_count}个发票。"
+            
             return {
                 'success': True,
                 'amounts': results,
                 'totalAmount': f'{total_amount:.2f}',
-                'duplicateDetails': duplicate_details
+                'duplicateDetails': duplicate_details,
+                'validationWarning': validation_warning,
+                'unrecognizedFiles': unrecognized_files,
+                'selectedCount': selected_count,
+                'recognizedCount': recognized_count
             }
             
         except Exception as e:
@@ -718,7 +743,7 @@ Start-Process -FilePath $file -Verb Print -Wait
 if __name__ == '__main__':
     api = PDFMergerAPI()
     window = webview.create_window(
-        '发票打印工具 - 专业版',
+        '发票打印工具 - 专业版 v3.3',
         html=ui.html_content,
         width=1200,
         height=800,

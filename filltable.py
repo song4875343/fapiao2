@@ -72,7 +72,8 @@ class ReimbursementLogic:
                     kw_y0, kw_y1 = keyword_rect[1], keyword_rect[3]
                     kw_x1 = keyword_rect[2]
                     
-                    candidates = []
+                    # 收集同一行的所有文本块
+                    same_line_spans = []
                     for block in blocks:
                         if "lines" in block:
                             for line in block["lines"]:
@@ -85,20 +86,20 @@ class ReimbursementLogic:
                                     y_overlap = not (span_y1 < kw_y0 or span_y0 > kw_y1)
                                     is_right = span_x0 >= kw_x1 - 10
                                     
-                                    if y_overlap and is_right and ('¥' in span_text or '￥' in span_text):
-                                        amount_match = re.search(r'[¥￥]\s*([\d,]+\.?\d*)', span_text)
-                                        if amount_match:
-                                            amount_str = amount_match.group(1).replace(',', '')
-                                            try:
-                                                amount_val = float(amount_str)
-                                                distance = span_x0 - kw_x1
-                                                candidates.append((distance, amount_val))
-                                            except:
-                                                pass
+                                    if y_overlap and is_right and span_text:
+                                        same_line_spans.append((span_x0, span_text))
                     
-                    if candidates:
-                        candidates.sort(key=lambda x: x[0])
-                        amount = candidates[0][1]
+                    # 按X坐标排序，拼接文本
+                    same_line_spans.sort(key=lambda x: x[0])
+                    combined_text = ' '.join([text for _, text in same_line_spans])
+                    
+                    # 从拼接后的文本中提取金额
+                    amount_match = re.search(r'[¥￥]\s*([\d,]+\.?\d*)', combined_text)
+                    if amount_match:
+                        try:
+                            amount = float(amount_match.group(1).replace(',', ''))
+                        except:
+                            pass
                 
                 # 提取发票号（查找"发票号码"）
                 if '发票号码' in text:
@@ -347,6 +348,10 @@ class ReimbursementLogic:
         # 构建返回给前端的表格数据
         table_rows = []
         for idx, row in enumerate(final_rows):
+            # 提取文件名和页码作为来源
+            file_name = os.path.basename(row['path'])
+            source = f"{file_name}-P1"  # 发票通常是第一页
+            
             table_rows.append({
                 'id': idx + 1,
                 'people': row['people'],
@@ -354,7 +359,8 @@ class ReimbursementLogic:
                 'start': row['start'],
                 'end': row['end'],
                 'amount': row['amount'],
-                'invoiceNo': row['invoiceNo']
+                'invoiceNo': row['invoiceNo'],
+                'source': source  # 新增来源字段
             })
         
         # 检查重复详情

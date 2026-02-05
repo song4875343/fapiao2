@@ -134,6 +134,65 @@ html_content = """
         
         /* 合计行样式 */
         .result-table tfoot tr { font-weight: bold; background-color: #f8f9fa; }
+        
+        /* 可编辑单元格样式 */
+        .editable-cell { cursor: text; position: relative; }
+        .editable-cell:hover { background-color: #f0f8ff; }
+        .editable-cell input { width: 100%; border: none; padding: 4px; background: transparent; font-size: inherit; }
+        .edited-row { background-color: #fff3cd !important; }
+        
+        /* 双击预览提示 */
+        .result-table tbody tr { cursor: pointer; }
+        .result-table tbody tr:hover { background-color: #f5f5f5; }
+        
+        /* 校验信息框样式 */
+        .validation-info { 
+            margin-bottom: 15px; 
+            padding: 12px 15px; 
+            background: #e3f2fd; 
+            border: 1px solid #2196f3; 
+            border-radius: 4px; 
+            color: #1565c0; 
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .validation-info.warning { 
+            background: #fff3e0; 
+            border-color: #ff9800; 
+            color: #e65100; 
+        }
+        .validation-info.error { 
+            background: #ffebee; 
+            border-color: #f44336; 
+            color: #c62828; 
+        }
+        .validation-info strong { 
+            display: block; 
+            margin-bottom: 5px; 
+            font-size: 14px;
+        }
+        
+        /* 修改提示样式 */
+        .edit-notice {
+            margin-top: 15px;
+            padding: 12px 15px;
+            background: #fff9e6;
+            border: 1px solid #ffd54f;
+            border-radius: 4px;
+            color: #f57c00;
+            font-size: 13px;
+        }
+        .edit-notice strong {
+            display: block;
+            margin-bottom: 8px;
+        }
+        .edit-notice ul {
+            margin: 5px 0 0 20px;
+            padding: 0;
+        }
+        .edit-notice li {
+            margin: 3px 0;
+        }
     </style>
 </head>
 <body>
@@ -149,8 +208,8 @@ html_content = """
         <button onclick="clearAll()" class="danger">清空全部</button>
         <div style="flex:1"></div>
         <button onclick="showHelp()" style="background-color: #95a5a6; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px;">帮助</button>
-        <button onclick="switchToWorkspace()" id="btnBackEdit" style="display:none; margin-right: 10px;">&lt; 返回编辑</button>
         <button onclick="startMerge()" class="success">合并并保存</button>
+        <button onclick="switchToWorkspace()" id="btnBackEdit" style="display:none; margin-left: 10px;">&lt; 返回编辑</button>
     </div>
 
     <div class="main-content">
@@ -378,7 +437,7 @@ html_content = """
                         </div>
                     </div>
                     <div class="help-footer">
-                        <p>发票打印工具 - 专业版 v3.2</p>
+                        <p>发票打印工具 - 专业版 v3.3</p>
                         <p>让发票处理更简单、更高效</p>
                     </div>
                 </div>
@@ -436,7 +495,7 @@ html_content = """
             <div class="modal-header"><h3>生成的报销单</h3><button onclick="closeModal('resultModal')">×</button></div>
             <div class="modal-body">
                 <table class="result-table" id="resultTable">
-                    <thead><tr><th>序号</th><th>发票号</th><th>人数</th><th>日期</th><th>起点</th><th>终点</th><th>票额</th></tr></thead>
+                    <thead><tr><th>序号</th><th>发票号</th><th>来源</th><th>人数</th><th>日期</th><th>起点</th><th>终点</th><th>票额</th></tr></thead>
                     <tbody></tbody>
                     <tfoot></tfoot>
                 </table>
@@ -511,8 +570,14 @@ html_content = """
         // 缓存当前的报销单数据用于保存CSV
         let currentTableData = [];
         
+        // 记录被编辑的行（用于显示修改提示）
+        let editedRows = new Map(); // 改为Map，存储 {rowIndex: {field: {old: xxx, new: xxx}}}
+        
         // 记录当前右键激活的列表项
         let activeContextItem = null;
+        
+        // 记录从哪个模态框跳转到预览的
+        let previewSourceModal = null;
         
         // 记录当前预览的文件路径
         let currentReviewFilePath = null;
@@ -564,7 +629,19 @@ html_content = """
         async function submitFillForm() {
             const dateStr = document.getElementById('dateRangeInput').value;
             if (!dateStr) return;
-            const selectedPaths = []; selectedPageIds.forEach(id => { const p = allPages.find(x => x.id === id); if (p) selectedPaths.push(p.path); });
+            const selectedPaths = []; 
+            const selectedPages = [];
+            selectedPageIds.forEach(id => { 
+                const p = allPages.find(x => x.id === id); 
+                if (p) {
+                    selectedPaths.push(p.path);
+                    selectedPages.push({
+                        path: p.path,
+                        pageIndex: p.pageIndex,
+                        fileName: p.fileName
+                    });
+                }
+            });
             if (selectedPaths.length === 0) { alert("请先选择发票"); return; }
 
             showProgress('正在分析发票...', 50);
@@ -574,23 +651,125 @@ html_content = """
                 
                 if (res.success) {
                     currentTableData = res.rows;
+                    editedRows.clear(); // 清空编辑记录
+                    
+                    const modalBody = document.querySelector('#resultModal .modal-body');
+                    modalBody.innerHTML = '';
+                    
+                    // 显示校验信息
+                    const selectedCount = selectedPages.length;
+                    const recognizedCount = res.rows.length;
+                    const validationDiv = document.createElement('div');
+                    
+                    let hasIssue = false;
+                    let passDetails = [];
+                    let issueDetails = [];
+                    
+                    // 检查数量是否一致
+                    if (selectedCount !== recognizedCount) {
+                        hasIssue = true;
+                        issueDetails.push(`选中 ${selectedCount} 个页面，但只识别出 ${recognizedCount} 个发票`);
+                        
+                        // 找出未识别的页面
+                        const recognizedSources = new Set(res.rows.map(r => r.source));
+                        const unrecognized = [];
+                        selectedPages.forEach(p => {
+                            const pageLabel = `${p.fileName}-P${p.pageIndex + 1}`;
+                            if (!recognizedSources.has(pageLabel)) {
+                                unrecognized.push(pageLabel);
+                            }
+                        });
+                        
+                        if (unrecognized.length > 0) {
+                            issueDetails.push(`未识别的页面：${unrecognized.join('、')}`);
+                        }
+                    } else {
+                        passDetails.push(`页面数量一致（${selectedCount}个）`);
+                    }
+                    
+                    // 检查发票号是否有未识别
+                    const unrecognizedInvoices = res.rows.filter(r => !r.invoiceNo || r.invoiceNo === '未识别');
+                    if (unrecognizedInvoices.length > 0) {
+                        hasIssue = true;
+                        issueDetails.push(`${unrecognizedInvoices.length} 个发票号未识别`);
+                    } else {
+                        passDetails.push(`所有发票号已识别`);
+                    }
+                    
+                    // 检查金额是否有0
+                    const zeroAmounts = res.rows.filter(r => parseFloat(r.amount) === 0);
+                    if (zeroAmounts.length > 0) {
+                        hasIssue = true;
+                        issueDetails.push(`${zeroAmounts.length} 个发票金额为0`);
+                    } else {
+                        passDetails.push(`所有发票金额正常`);
+                    }
+                    
+                    if (hasIssue) {
+                        validationDiv.className = 'validation-info error';
+                        validationDiv.innerHTML = `<strong>⚠️ 校验警告</strong>`;
+                        if (passDetails.length > 0) {
+                            validationDiv.innerHTML += `<br><span style="color: #2e7d32;">✓ 通过项：${passDetails.join('，')}</span>`;
+                        }
+                        validationDiv.innerHTML += issueDetails.map(d => `<br>• ${d}`).join('');
+                    } else {
+                        validationDiv.className = 'validation-info';
+                        validationDiv.innerHTML = `<strong>✓ 校验通过</strong><br>` + passDetails.map(d => `• ${d}`).join('<br>');
+                    }
+                    
+                    modalBody.appendChild(validationDiv);
+                    
+                    // 创建表格容器
+                    const tableContainer = document.createElement('div');
+                    tableContainer.innerHTML = `
+                        <table class="result-table" id="resultTable">
+                            <thead><tr><th>序号</th><th>发票号</th><th>来源</th><th>人数</th><th>日期</th><th>起点</th><th>终点</th><th>票额</th></tr></thead>
+                            <tbody></tbody>
+                            <tfoot></tfoot>
+                        </table>
+                    `;
+                    modalBody.appendChild(tableContainer);
+                    
                     const tbody = document.querySelector('#resultTable tbody');
                     const tfoot = document.querySelector('#resultTable tfoot');
-                    tbody.innerHTML = ''; tfoot.innerHTML = '';
                     
                     let totalAmount = 0.0;
-                    res.rows.forEach(r => {
+                    res.rows.forEach((r, idx) => {
                         const tr = document.createElement('tr');
-                        tr.innerHTML = `<td>${r.id}</td><td>${r.invoiceNo}</td><td>${r.people}</td><td>${r.date}</td><td>${r.start}</td><td>${r.end}</td><td>${r.amount}</td>`;
+                        tr.dataset.rowIndex = idx;
+                        tr.dataset.edited = 'false';
+                        
+                        // 双击预览发票 - 在主框架显示
+                        tr.ondblclick = () => previewInvoiceInMainFrame(r.source, 'resultModal');
+                        
+                        // 创建可编辑单元格
+                        tr.innerHTML = `
+                            <td>${r.id}</td>
+                            <td class="editable-cell" data-field="invoiceNo">${r.invoiceNo}</td>
+                            <td>${r.source || ''}</td>
+                            <td class="editable-cell" data-field="people">${r.people}</td>
+                            <td class="editable-cell" data-field="date">${r.date}</td>
+                            <td class="editable-cell" data-field="start">${r.start}</td>
+                            <td class="editable-cell" data-field="end">${r.end}</td>
+                            <td class="editable-cell" data-field="amount">${r.amount}</td>
+                        `;
+                        
+                        // 为可编辑单元格添加点击事件
+                        tr.querySelectorAll('.editable-cell').forEach(cell => {
+                            cell.onclick = (e) => {
+                                e.stopPropagation();
+                                makeEditable(e.target, tr, 'reimbursement');
+                            };
+                        });
+                        
                         tbody.appendChild(tr);
                         totalAmount += parseFloat(r.amount);
                     });
                     
-                    tfoot.innerHTML = `<tr><td colspan="5"></td><td>合计</td><td>${totalAmount.toFixed(2)}</td></tr>`;
+                    tfoot.innerHTML = `<tr><td colspan="7">合计</td><td>${totalAmount.toFixed(2)}</td></tr>`;
                     
                     // 显示重复提示
                     if (res.duplicateDetails && res.duplicateDetails.length > 0) {
-                        const modalBody = document.querySelector('#resultModal .modal-body');
                         const warningDiv = document.createElement('div');
                         warningDiv.style.cssText = 'margin-top: 15px; padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; color: #856404; font-size: 13px;';
                         warningDiv.innerHTML = '<strong>⚠️ 发现重复发票（已自动去重）：</strong><br><br>' + 
@@ -604,24 +783,273 @@ html_content = """
                         modalBody.appendChild(warningDiv);
                     }
                     
+                    // 添加修改提示占位符
+                    const editNoticeDiv = document.createElement('div');
+                    editNoticeDiv.id = 'editNotice';
+                    editNoticeDiv.className = 'edit-notice';
+                    editNoticeDiv.style.display = 'none';
+                    modalBody.appendChild(editNoticeDiv);
+                    
                     document.getElementById('resultModal').style.display = 'flex';
                 } else {
                     alert(res.error);
                 }
             }, 100);
         }
+        
+        // 使单元格可编辑
+        function makeEditable(cell, row, tableType) {
+            if (cell.querySelector('input')) return; // 已经是编辑状态
+            
+            const originalValue = cell.textContent;
+            const field = cell.dataset.field;
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = originalValue;
+            input.style.width = '100%';
+            
+            cell.textContent = '';
+            cell.appendChild(input);
+            input.focus();
+            input.select();
+            
+            const finishEdit = () => {
+                const newValue = input.value;
+                cell.textContent = newValue;
+                
+                // 更新数据
+                const rowIndex = parseInt(row.dataset.rowIndex);
+                const dataSource = tableType === 'statistics' ? currentStatisticsData : currentTableData;
+                
+                if (dataSource[rowIndex]) {
+                    const oldValue = dataSource[rowIndex][field];
+                    
+                    // 只有值真正改变时才记录
+                    if (oldValue !== newValue) {
+                        dataSource[rowIndex][field] = newValue;
+                        
+                        // 标记为已编辑
+                        row.dataset.edited = 'true';
+                        row.classList.add('edited-row');
+                        
+                        // 记录修改详情
+                        if (!editedRows.has(rowIndex)) {
+                            editedRows.set(rowIndex, {});
+                        }
+                        editedRows.get(rowIndex)[field] = {old: oldValue, new: newValue};
+                        
+                        // 更新修改提示
+                        updateEditNotice(tableType);
+                    }
+                    
+                    // 如果是金额字段，重新计算合计
+                    if (field === 'amount') {
+                        updateTotal(tableType);
+                    }
+                }
+            };
+            
+            input.onblur = finishEdit;
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    finishEdit();
+                } else if (e.key === 'Escape') {
+                    cell.textContent = originalValue;
+                }
+            };
+        }
+        
+        // 更新修改提示
+        function updateEditNotice(tableType) {
+            const noticeId = tableType === 'statistics' ? 'editNoticeStats' : 'editNotice';
+            const noticeDiv = document.getElementById(noticeId);
+            if (!noticeDiv) return;
+            
+            if (editedRows.size === 0) {
+                noticeDiv.style.display = 'none';
+                return;
+            }
+            
+            const dataSource = tableType === 'statistics' ? currentStatisticsData : currentTableData;
+            const editedList = [];
+            
+            // 字段名称映射
+            const fieldNames = {
+                'invoiceNo': '发票号',
+                'people': '人数',
+                'date': '日期',
+                'start': '起点',
+                'end': '终点',
+                'amount': '金额'
+            };
+            
+            editedRows.forEach((changes, idx) => {
+                const changeDetails = [];
+                for (const [field, values] of Object.entries(changes)) {
+                    const fieldName = fieldNames[field] || field;
+                    changeDetails.push(`${fieldName}: ${values.old} → ${values.new}`);
+                }
+                editedList.push(`序号 ${idx + 1}：${changeDetails.join('，')}`);
+            });
+            
+            noticeDiv.innerHTML = `
+                <strong>📝 以下数据已被手动修改（${editedRows.size}条）：</strong>
+                <ul>
+                    ${editedList.map(item => `<li>${item}</li>`).join('')}
+                </ul>
+            `;
+            noticeDiv.style.display = 'block';
+        }
+        
+        // 更新合计
+        function updateTotal(tableType) {
+            let total = 0.0;
+            const dataSource = tableType === 'statistics' ? currentStatisticsData : currentTableData;
+            
+            dataSource.forEach(r => {
+                total += parseFloat(r.amount) || 0;
+            });
+            
+            const tableId = tableType === 'statistics' ? 'statisticsTable' : 'resultTable';
+            const tfoot = document.querySelector(`#${tableId} tfoot`);
+            
+            if (tableType === 'statistics') {
+                tfoot.innerHTML = `<tr><td colspan="3">合计（已去重）</td><td>${total.toFixed(2)}</td></tr>`;
+            } else {
+                // 报销单：序号、发票号、来源、人数、日期、起点、终点、票额 = 8列
+                tfoot.innerHTML = `<tr><td colspan="7">合计</td><td>${total.toFixed(2)}</td></tr>`;
+            }
+        }
+        
+        // 预览发票（从报销单行）- 旧版本，使用模态框
+        async function previewInvoiceFromRow(rowData) {
+            if (!rowData.source) {
+                alert('无法定位发票来源');
+                return;
+            }
+            
+            // 解析来源信息 "文件名-P1"
+            const match = rowData.source.match(/^(.+)-P(\d+)$/);
+            if (!match) {
+                alert('来源格式错误');
+                return;
+            }
+            
+            const fileName = match[1];
+            const pageNum = parseInt(match[2]) - 1; // 转换为0-based索引
+            
+            // 查找对应的文件路径
+            const sourceFile = sourceFiles.find(f => f.name === fileName);
+            if (!sourceFile) {
+                alert('找不到源文件：' + fileName);
+                return;
+            }
+            
+            // 打开预览模态框
+            document.getElementById('previewModal').style.display = 'flex';
+            const img = document.getElementById('previewImage');
+            img.style.transform = 'rotate(0deg)';
+            currentPreviewZoom = 1.0;
+            updatePreviewZoom();
+            img.src = '';
+            
+            // 加载图片
+            const res = await pywebview.api.get_page_image(sourceFile.path, pageNum, 5.0);
+            if (res.success) {
+                img.src = res.image;
+            } else {
+                alert('加载发票失败');
+                closePreview();
+            }
+        }
+        
+        // 在主框架中预览发票
+        async function previewInvoiceInMainFrame(sourceLabel, fromModal) {
+            if (!sourceLabel) {
+                alert('无法定位发票来源');
+                return;
+            }
+            
+            // 解析来源信息 "文件名-P1"
+            const match = sourceLabel.match(/^(.+)-P(\d+)$/);
+            if (!match) {
+                alert('来源格式错误');
+                return;
+            }
+            
+            const fileName = match[1];
+            const pageNum = parseInt(match[2]) - 1;
+            
+            // 查找对应的文件路径
+            const sourceFile = sourceFiles.find(f => f.name === fileName);
+            if (!sourceFile) {
+                alert('找不到源文件：' + fileName);
+                return;
+            }
+            
+            // 记录来源模态框
+            previewSourceModal = fromModal;
+            
+            // 关闭模态框
+            closeModal('resultModal');
+            closeModal('statisticsModal');
+            
+            // 切换到review视图
+            document.getElementById('workspaceView').style.display = 'none';
+            document.getElementById('reviewView').style.display = 'flex';
+            document.getElementById('btnBackEdit').style.display = 'block';
+            
+            const c = document.getElementById('reviewContent');
+            c.innerHTML = '<div style="color:white; margin-top:50px;">正在加载发票...</div>';
+            
+            if (reviewObserver) reviewObserver.disconnect();
+            
+            c.innerHTML = '';
+            currentReviewZoom = 1.0;
+            updateReviewZoomUI();
+            
+            const div = document.createElement('div');
+            div.className = 'review-page';
+            div.style.width = BASE_WIDTH + 'px';
+            div.dataset.path = sourceFile.path;
+            div.dataset.index = pageNum;
+            
+            const img = document.createElement('img');
+            img.alt = `${fileName} - P${pageNum + 1}`;
+            img.src = '';
+            div.innerHTML += '<span class="review-loading">正在加载...</span>';
+            
+            div.appendChild(img);
+            c.appendChild(div);
+            
+            // 加载高清图
+            const res = await pywebview.api.get_page_image(sourceFile.path, pageNum, 5.0);
+            if (res.success) {
+                img.src = res.image;
+                img.dataset.status = 'hd';
+                const loading = div.querySelector('.review-loading');
+                if (loading) loading.remove();
+            } else {
+                alert('加载发票失败');
+                switchToWorkspace();
+            }
+            
+            // 保存当前预览的文件路径
+            currentReviewFilePath = sourceFile.path;
+        }
 
         // 报销单复制功能
         function copyReimbursementTable() {
             if (!currentTableData || currentTableData.length === 0) return;
             
-            let text = "序号\\t发票号\\t人数\\t日期\\t起点\\t终点\\t票额\\n";
+            let text = "序号\\t发票号\\t来源\\t人数\\t日期\\t起点\\t终点\\t票额\\n";
             let total = 0.0;
             currentTableData.forEach(r => {
-                text += `${r.id}\\t${r.invoiceNo}\\t${r.people}\\t${r.date}\\t${r.start}\\t${r.end}\\t${r.amount}\\n`;
+                text += `${r.id}\\t${r.invoiceNo}\\t${r.source || ''}\\t${r.people}\\t${r.date}\\t${r.start}\\t${r.end}\\t${r.amount}\\n`;
                 total += parseFloat(r.amount);
             });
-            text += `\\t\\t\\t\\t\\t合计\\t${total.toFixed(2)}`;
+            text += `\\t\\t\\t\\t\\t\\t合计\\t${total.toFixed(2)}`;
             
             if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text)
@@ -700,9 +1128,77 @@ html_content = """
                 
                 if (res.success) {
                     currentStatisticsData = res.amounts;  // 缓存数据
+                    editedRows.clear(); // 清空编辑记录
                     
                     const modalBody = document.querySelector('#statisticsModal .modal-body');
                     modalBody.innerHTML = '';
+                    
+                    // 显示校验信息
+                    const selectedCount = selectedPages.length;
+                    const recognizedCount = res.amounts.length;
+                    const validationDiv = document.createElement('div');
+                    
+                    let hasIssue = false;
+                    let passDetails = [];
+                    let issueDetails = [];
+                    
+                    // 检查数量是否一致
+                    if (selectedCount !== recognizedCount) {
+                        hasIssue = true;
+                        issueDetails.push(`选中 ${selectedCount} 个页面，但只识别出 ${recognizedCount} 个发票`);
+                        
+                        // 找出未识别的页面
+                        const recognizedPages = new Set();
+                        res.amounts.forEach(item => {
+                            item.pages.forEach(page => recognizedPages.add(page));
+                        });
+                        
+                        const unrecognized = [];
+                        selectedPages.forEach(p => {
+                            const pageLabel = `${p.fileName}-P${p.pageIndex + 1}`;
+                            if (!recognizedPages.has(pageLabel)) {
+                                unrecognized.push(pageLabel);
+                            }
+                        });
+                        
+                        if (unrecognized.length > 0) {
+                            issueDetails.push(`未识别的页面：${unrecognized.join('、')}`);
+                        }
+                    } else {
+                        passDetails.push(`页面数量一致（${selectedCount}个）`);
+                    }
+                    
+                    // 检查发票号是否有未识别
+                    const unrecognizedInvoices = res.amounts.filter(a => !a.invoiceNo || a.invoiceNo === '未识别');
+                    if (unrecognizedInvoices.length > 0) {
+                        hasIssue = true;
+                        issueDetails.push(`${unrecognizedInvoices.length} 个发票号未识别`);
+                    } else {
+                        passDetails.push(`所有发票号已识别`);
+                    }
+                    
+                    // 检查金额是否有0
+                    const zeroAmounts = res.amounts.filter(a => parseFloat(a.amount) === 0);
+                    if (zeroAmounts.length > 0) {
+                        hasIssue = true;
+                        issueDetails.push(`${zeroAmounts.length} 个发票金额为0`);
+                    } else {
+                        passDetails.push(`所有发票金额正常`);
+                    }
+                    
+                    if (hasIssue) {
+                        validationDiv.className = 'validation-info error';
+                        validationDiv.innerHTML = `<strong>⚠️ 校验警告</strong>`;
+                        if (passDetails.length > 0) {
+                            validationDiv.innerHTML += `<br><span style="color: #2e7d32;">✓ 通过项：${passDetails.join('，')}</span>`;
+                        }
+                        validationDiv.innerHTML += issueDetails.map(d => `<br>• ${d}`).join('');
+                    } else {
+                        validationDiv.className = 'validation-info';
+                        validationDiv.innerHTML = `<strong>✓ 校验通过</strong><br>` + passDetails.map(d => `• ${d}`).join('<br>');
+                    }
+                    
+                    modalBody.appendChild(validationDiv);
                     
                     const tableContainer = document.createElement('div');
                     tableContainer.innerHTML = `
@@ -719,6 +1215,9 @@ html_content = """
                     
                     res.amounts.forEach((item, index) => {
                         const tr = document.createElement('tr');
+                        tr.dataset.rowIndex = index;
+                        tr.dataset.edited = 'false';
+                        
                         let rowStyle = '';
                         let invoiceDisplay = item.invoiceNo;
                         
@@ -728,11 +1227,36 @@ html_content = """
                         }
                         
                         tr.style.cssText = rowStyle;
-                        tr.innerHTML = `<td>${index + 1}</td><td>${invoiceDisplay}</td><td>${item.pages.join(', ')}</td><td>${item.amount}</td>`;
+                        
+                        // 创建可编辑单元格
+                        tr.innerHTML = `
+                            <td>${index + 1}</td>
+                            <td class="editable-cell" data-field="invoiceNo">${invoiceDisplay}</td>
+                            <td>${item.pages.join(', ')}</td>
+                            <td class="editable-cell" data-field="amount">${item.amount}</td>
+                        `;
                         
                         if (item.isDuplicate) {
                             tr.title = `重复发票 - 已去重统计`;
                         }
+                        
+                        // 为可编辑单元格添加点击事件
+                        tr.querySelectorAll('.editable-cell').forEach(cell => {
+                            cell.onclick = (e) => {
+                                e.stopPropagation();
+                                makeEditable(e.target, tr, 'statistics');
+                            };
+                        });
+                        
+                        // 双击预览发票（非编辑单元格区域）- 在主框架显示
+                        tr.style.cursor = 'pointer';
+                        tr.ondblclick = (e) => {
+                            if (!e.target.classList.contains('editable-cell')) {
+                                if (item.pages && item.pages.length > 0) {
+                                    previewInvoiceInMainFrame(item.pages[0], 'statisticsModal');
+                                }
+                            }
+                        };
                         
                         tbody.appendChild(tr);
                     });
@@ -753,6 +1277,13 @@ html_content = """
                             ).join('');
                         modalBody.appendChild(warningDiv);
                     }
+                    
+                    // 添加修改提示占位符
+                    const editNoticeDiv = document.createElement('div');
+                    editNoticeDiv.id = 'editNoticeStats';
+                    editNoticeDiv.className = 'edit-notice';
+                    editNoticeDiv.style.display = 'none';
+                    modalBody.appendChild(editNoticeDiv);
                     
                     document.getElementById('statisticsModal').style.display = 'flex';
                 } else {
@@ -1037,7 +1568,20 @@ html_content = """
 
         async function loadHighResImage(div, img) { if (div.dataset.loading === 'true') return; div.dataset.loading = 'true'; const res = await pywebview.api.get_page_image(div.dataset.path, parseInt(div.dataset.index), 5.0); if (res.success) { img.src = res.image; img.dataset.status = 'hd'; const l = div.querySelector('.review-loading'); if (l) l.remove(); } delete div.dataset.loading; }
         
-        function switchToWorkspace() { if (reviewObserver) reviewObserver.disconnect(); document.getElementById('reviewView').style.display = 'none'; document.getElementById('helpView').style.display = 'none'; document.getElementById('workspaceView').style.display = 'flex'; document.getElementById('btnBackEdit').style.display = 'none'; currentReviewFilePath = null; }
+        function switchToWorkspace() { 
+            if (reviewObserver) reviewObserver.disconnect(); 
+            document.getElementById('reviewView').style.display = 'none'; 
+            document.getElementById('helpView').style.display = 'none'; 
+            document.getElementById('workspaceView').style.display = 'flex'; 
+            document.getElementById('btnBackEdit').style.display = 'none'; 
+            currentReviewFilePath = null; 
+            
+            // 如果是从模态框跳转过来的，重新打开模态框
+            if (previewSourceModal) {
+                document.getElementById(previewSourceModal).style.display = 'flex';
+                previewSourceModal = null;
+            }
+        }
         
         async function printCurrentFile() {
             if (!currentReviewFilePath) {
