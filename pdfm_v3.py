@@ -18,11 +18,30 @@ import ui
 sys.setrecursionlimit(2000)
 
 class PDFMergerAPI:
-    def __init__(self):
-        self.source_files = {} 
+    def __init__(self, mode='local'):
+        """
+        初始化 API
+        mode: 'local' 本地模式 (pywebview) | 'server' 服务器模式 (FastAPI)
+        """
+        self.mode = mode
+        self.source_files = {}
+        self.file_mapping = {}  # 服务器模式：虚拟ID -> 真实路径
+        self.temp_dir = None
+        
+        if mode == 'server':
+            import tempfile
+            from pathlib import Path
+            self.temp_dir = Path(tempfile.gettempdir()) / "pdfm_server"
+            self.temp_dir.mkdir(exist_ok=True)
+            print(f"📁 临时文件目录: {self.temp_dir}")
 
     def select_pdfs(self):
         """选择PDF文件"""
+        if self.mode == 'server':
+            # 服务器模式：返回特殊标记，让前端触发文件上传
+            return 'BROWSER_UPLOAD_REQUIRED'
+        
+        # 本地模式：使用系统文件对话框
         file_types = ('PDF Files (*.pdf)', 'All Files (*.*)')
         files = window.create_file_dialog(
             webview.FileDialog.OPEN,
@@ -49,10 +68,56 @@ class PDFMergerAPI:
                 except Exception as e:
                     print(f"解析文件失败 {file_path}: {e}")
         return result
+    
+    def upload_files(self, files_data):
+        """
+        服务器模式专用：处理上传的文件
+        files_data: [(filename, file_content_bytes), ...]
+        """
+        if self.mode != 'server':
+            return {'success': False, 'error': '仅服务器模式可用'}
+        
+        result = []
+        import fitz
+        
+        for filename, content in files_data:
+            if not filename.lower().endswith('.pdf'):
+                continue
+            
+            # 生成虚拟ID
+            file_id = str(uuid.uuid4())
+            file_path = self.temp_dir / f"{file_id}.pdf"
+            
+            # 保存文件
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            
+            # 记录映射
+            self.file_mapping[file_id] = str(file_path)
+            
+            # 获取页数
+            try:
+                doc = fitz.open(str(file_path))
+                page_count = doc.page_count
+                doc.close()
+                
+                result.append({
+                    'path': file_id,  # 返回虚拟ID
+                    'name': filename,
+                    'page_count': page_count
+                })
+            except Exception as e:
+                print(f"解析文件失败: {e}")
+        
+        return result
 
     def get_file_info(self, file_path):
         """获取单个文件的信息"""
         try:
+            # 服务器模式：转换虚拟ID为真实路径
+            if self.mode == 'server' and file_path in self.file_mapping:
+                file_path = self.file_mapping[file_path]
+            
             file_path = str(file_path)
             if not os.path.exists(file_path):
                 return {'success': False, 'error': '文件不存在'}
@@ -68,6 +133,10 @@ class PDFMergerAPI:
     def get_page_image(self, file_path, page_index, quality=1.0):
         """获取页面图片，增加智能清晰度控制"""
         try:
+            # 服务器模式：转换虚拟ID为真实路径
+            if self.mode == 'server' and file_path in self.file_mapping:
+                file_path = self.file_mapping[file_path]
+            
             file_path = str(file_path)
             if not os.path.exists(file_path):
                 return {'success': False, 'error': '文件不存在'}
@@ -115,12 +184,24 @@ class PDFMergerAPI:
             if not page_list:
                 return {'success': False, 'error': '没有可合并的页面'}
 
-            if isinstance(output_path, (list, tuple)):
-                output_path = str(output_path[0])
-            else:
+            # 服务器模式：转换虚拟ID为真实路径
+            if self.mode == 'server':
+                for item in page_list:
+                    if item['path'] in self.file_mapping:
+                        item['path'] = self.file_mapping[item['path']]
+                
+                # 生成输出文件路径
+                output_id = str(uuid.uuid4())
+                output_path = self.temp_dir / f"merged_{output_id}.pdf"
                 output_path = str(output_path)
-            
-            output_path = output_path.strip().strip('"').strip("'")
+            else:
+                # 本地模式：处理路径
+                if isinstance(output_path, (list, tuple)):
+                    output_path = str(output_path[0])
+                else:
+                    output_path = str(output_path)
+                
+                output_path = output_path.strip().strip('"').strip("'")
             output_dir = os.path.dirname(output_path)
             if output_dir and not os.path.exists(output_dir):
                 os.makedirs(output_dir)
@@ -178,8 +259,24 @@ class PDFMergerAPI:
                 'success': True, 
                 'message': success_msg, 
                 'output_path': output_path,
-                'thumbnail': first_page_thumb # 返回缩略图
+                'thumbnail': first_page_thumb
             }
+            
+            # 服务器模式：返回PDF内容并记录映射
+            if self.mode == 'server':
+                with open(output_path, 'rb') as f:
+                    pdf_content = f.read()
+                pdf_base64 = base64.b64encode(pdf_content).decode()
+                
+                # 记录映射（用于后续预览）
+                output_id = os.path.basename(output_path).replace('merged_', '').replace('.pdf', '')
+                self.file_mapping[output_id] = output_path
+                
+                result['output_path'] = output_id
+                result['pdf_content'] = pdf_base64
+                result['file_size'] = len(pdf_content)
+            
+            return result
 
         except Exception as e:
             return {'success': False, 'error': str(e)}
@@ -244,6 +341,12 @@ class PDFMergerAPI:
             print(f"处理页面出错: {e}")
 
     def save_file_dialog(self):
+        """保存文件对话框"""
+        if self.mode == 'server':
+            # 服务器模式：返回特殊标记，让前端触发下载
+            return 'BROWSER_DOWNLOAD'
+        
+        # 本地模式：使用系统文件对话框
         file_types = ('PDF Files (*.pdf)', 'All Files (*.*)')
         result = window.create_file_dialog(webview.FileDialog.SAVE, file_types=file_types, save_filename='merged.pdf')
         if result:
@@ -275,16 +378,30 @@ class PDFMergerAPI:
             if isinstance(file_paths[0], dict):
                 seen = set()
                 for p in file_paths:
-                    if p['path'] not in seen:
-                        paths.append(p['path'])
-                        seen.add(p['path'])
+                    path = p['path']
+                    # 服务器模式：转换虚拟ID为真实路径
+                    if self.mode == 'server' and path in self.file_mapping:
+                        path = self.file_mapping[path]
+                    if path not in seen:
+                        paths.append(path)
+                        seen.add(path)
             else:
-                paths = list(set(file_paths)) # 也是为了去重
+                # 服务器模式：转换虚拟ID为真实路径
+                if self.mode == 'server':
+                    paths = [self.file_mapping.get(p, p) for p in file_paths]
+                else:
+                    paths = file_paths
+                paths = list(set(paths)) # 去重
         
         return filltable.logic.generate_data(paths, date_range)
 
     def save_csv_dialog(self):
         """打开保存CSV对话框"""
+        if self.mode == 'server':
+            # 服务器模式：返回特殊标记，让前端触发下载
+            return 'BROWSER_DOWNLOAD'
+        
+        # 本地模式：使用系统文件对话框
         file_types = ('CSV Files (*.csv)', 'All Files (*.*)')
         result = window.create_file_dialog(webview.FileDialog.SAVE, file_types=file_types, save_filename='报销单.csv')
         if result:
@@ -317,17 +434,36 @@ class PDFMergerAPI:
     def save_reimbursement_csv(self, path, rows):
         """保存报销单到CSV文件"""
         try:
-            with open(path, 'w', newline='', encoding='utf-8-sig') as f:
-                writer = csv.writer(f)
-                # 写入表头（增加来源列）
+            # 服务器模式：生成CSV内容并返回Base64
+            if self.mode == 'server':
+                from io import StringIO
+                output = StringIO()
+                writer = csv.writer(output)
                 writer.writerow(['序号', '发票号', '来源', '人数', '日期', '起点', '终点', '票额'])
-                # 写入数据
                 total = 0.0
                 for r in rows:
-                    writer.writerow([r['id'], r.get('invoiceNo', '未识别'), r.get('source', ''), r['people'], r['date'], r['start'], r['end'], r['amount']])
+                    writer.writerow([r['id'], r.get('invoiceNo', '未识别'), r.get('source', ''), 
+                                   r['people'], r['date'], r['start'], r['end'], r['amount']])
                     total += float(r['amount'])
+                writer.writerow(['', '', '', '', '', '', '合计', f'{total:.2f}'])
                 
-                # 写入合计行
+                csv_content = output.getvalue()
+                csv_base64 = base64.b64encode(csv_content.encode('utf-8-sig')).decode()
+                return {
+                    'success': True,
+                    'content': csv_base64,
+                    'filename': '报销单.csv'
+                }
+            
+            # 本地模式：直接保存文件
+            with open(path, 'w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                writer.writerow(['序号', '发票号', '来源', '人数', '日期', '起点', '终点', '票额'])
+                total = 0.0
+                for r in rows:
+                    writer.writerow([r['id'], r.get('invoiceNo', '未识别'), r.get('source', ''), 
+                                   r['people'], r['date'], r['start'], r['end'], r['amount']])
+                    total += float(r['amount'])
                 writer.writerow(['', '', '', '', '', '', '合计', f'{total:.2f}'])
             return {'success': True}
         except Exception as e:
@@ -336,38 +472,61 @@ class PDFMergerAPI:
     def save_statistics_csv(self, path, amounts):
         """保存统计数据到CSV文件"""
         try:
-            with open(path, 'w', newline='', encoding='utf-8-sig') as f:
-                writer = csv.writer(f)
-                # 写入表头
+            # 服务器模式：生成CSV内容并返回Base64
+            if self.mode == 'server':
+                from io import StringIO
+                output = StringIO()
+                writer = csv.writer(output)
                 writer.writerow(['序号', '发票号', '来源页面', '金额'])
-                # 写入数据
                 total = 0.0
                 for idx, item in enumerate(amounts):
                     pages_str = ', '.join(item.get('pages', []))
                     writer.writerow([idx + 1, item.get('invoiceNo', '未识别'), pages_str, item['amount']])
                     total += float(item['amount'])
+                writer.writerow(['', '', '合计（已去重）', f'{total:.2f}'])
                 
-                # 写入合计行
+                csv_content = output.getvalue()
+                csv_base64 = base64.b64encode(csv_content.encode('utf-8-sig')).decode()
+                return {
+                    'success': True,
+                    'content': csv_base64,
+                    'filename': '发票统计.csv'
+                }
+            
+            # 本地模式：直接保存文件
+            with open(path, 'w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                writer.writerow(['序号', '发票号', '来源页面', '金额'])
+                total = 0.0
+                for idx, item in enumerate(amounts):
+                    pages_str = ', '.join(item.get('pages', []))
+                    writer.writerow([idx + 1, item.get('invoiceNo', '未识别'), pages_str, item['amount']])
+                    total += float(item['amount'])
                 writer.writerow(['', '', '合计（已去重）', f'{total:.2f}'])
             return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
     def print_pdf(self, file_path):
         """打印PDF文件 - 读取文件内容并转换为Base64返回"""
         try:
+            # 服务器模式：转换虚拟ID为真实路径
+            if self.mode == 'server' and file_path in self.file_mapping:
+                file_path = self.file_mapping[file_path]
+            
             file_path = str(file_path)
             if not os.path.exists(file_path):
                 return {'success': False, 'error': '文件不存在'}
             
             # 读取文件并转换为Base64
-            # 这种方式比 file:// 协议更稳定，不会被浏览器安全策略拦截
             with open(file_path, "rb") as pdf_file:
                 encoded_string = base64.b64encode(pdf_file.read()).decode('utf-8')
             
             return {
                 'success': True, 
-                'data': f'data:application/pdf;base64,{encoded_string}',  # 返回完整的数据URI
+                'data': f'data:application/pdf;base64,{encoded_string}',
                 'message': '准备打印'
             }
         
@@ -377,6 +536,12 @@ class PDFMergerAPI:
     def calculate_invoice_amounts(self, pages_info):
         """从电子发票PDF中提取金额信息（按发票号去重，检测重复）"""
         try:
+            # 服务器模式：转换虚拟ID为真实路径
+            if self.mode == 'server':
+                for page in pages_info:
+                    if page['path'] in self.file_mapping:
+                        page['path'] = self.file_mapping[page['path']]
+            
             import re
             import fitz
             
@@ -656,6 +821,82 @@ class PDFMergerAPI:
             return {'success': False, 'error': str(e)}
 
 
+# ==================== 自动路由生成器 ====================
+def create_auto_server(api_instance, host='0.0.0.0', port=8000):
+    """自动为 PDFMergerAPI 生成 FastAPI 路由"""
+    from fastapi import FastAPI, Request, UploadFile, File
+    from fastapi.responses import HTMLResponse
+    from fastapi.middleware.cors import CORSMiddleware
+    from typing import List
+    import inspect
+    import uvicorn
+    
+    app = FastAPI(title="PDF Merger API Server")
+    
+    # 配置 CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # 返回前端页面
+    @app.get("/", response_class=HTMLResponse)
+    async def root():
+        html = ui.html_content
+        # 在 </head> 前插入垫片
+        shim_script = '<script src="/shim.js"></script>'
+        html = html.replace("</head>", f"{shim_script}</head>")
+        return html
+    
+    # 返回垫片脚本
+    @app.get("/shim.js")
+    async def get_shim():
+        with open("shim.js", "r", encoding="utf-8") as f:
+            content = f.read()
+        from fastapi.responses import Response
+        return Response(content=content, media_type="application/javascript")
+    
+    # 特殊处理：文件上传
+    @app.post("/api/upload_files")
+    async def upload_files(files: List[UploadFile] = File(...)):
+        files_data = []
+        for file in files:
+            content = await file.read()
+            files_data.append((file.filename, content))
+        result = api_instance.upload_files(files_data)
+        return result
+    
+    # 自动生成所有方法的路由
+    for name, method in inspect.getmembers(api_instance, predicate=inspect.ismethod):
+        if name.startswith('_') or name in ['upload_files']:  # 跳过私有方法和已处理的方法
+            continue
+        
+        # 使用默认参数捕获当前方法（避免闭包问题）
+        def create_endpoint(method_func=method):
+            async def endpoint(request: Request):
+                try:
+                    data = await request.json()
+                    # 调用实际方法
+                    result = method_func(**data)
+                    return result
+                except Exception as e:
+                    return {'success': False, 'error': str(e)}
+            return endpoint
+        
+        # 注册路由
+        app.post(f"/api/{name}")(create_endpoint())
+        print(f"✅ 注册路由: /api/{name}")
+    
+    print("=" * 60)
+    print(f"🌐 访问地址: http://localhost:{port}")
+    print("=" * 60)
+    
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
 if __name__ == '__main__':
     import argparse
     
@@ -673,40 +914,29 @@ if __name__ == '__main__':
         print("=" * 60)
         
         try:
-            import uvicorn
-            from server import app
-            
-            print(f"🌐 访问地址: http://localhost:{args.port}")
-            print(f"📖 API 文档: http://localhost:{args.port}/docs")
-            print("=" * 60)
-            print("💡 提示：在浏览器中打开上述地址即可使用")
-            print("=" * 60)
-            
-            uvicorn.run(app, host=args.host, port=args.port, log_level="info")
-        except ImportError:
+            # 创建服务器模式的 API 实例
+            api = PDFMergerAPI(mode='server')
+            # 使用自动路由生成器
+            create_auto_server(api, host=args.host, port=args.port)
+        except ImportError as e:
             print("❌ 错误：缺少依赖")
-            print("请安装：pip install fastapi uvicorn")
+            print(f"详情: {e}")
+            print("请安装：pip install fastapi uvicorn python-multipart")
             sys.exit(1)
     else:
         # ==================== 本地模式 (pywebview) ====================
-        api = PDFMergerAPI()
+        api = PDFMergerAPI(mode='local')
         
-        # --- 关键修改：将 HTML 写入临时文件，赋予页面合法的 file:// Origin ---
-        # 1. 获取当前运行目录
+        # 将 HTML 写入临时文件
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # 2. 定义临时HTML文件路径
         temp_html_path = os.path.join(base_dir, 'app_gui_temp.html')
         
-        # 3. 将 ui.py 中的 HTML 字符串写入文件
-        # 这样浏览器就会以 file:// 协议加载它，从而拥有合法的 Origin
         with open(temp_html_path, 'w', encoding='utf-8') as f:
             f.write(ui.html_content)
         
-        # 4. 创建窗口时，使用 url 参数加载本地文件，而不是 html 参数
         window = webview.create_window(
-            '发票打印工具 - 专业版 v3.3',
-            url=temp_html_path,  # 改为 url，加载本地文件
+            '发票打印工具 - 专业版 v3.4',
+            url=temp_html_path,
             width=1200,
             height=800,
             resizable=True,
@@ -723,4 +953,4 @@ if __name__ == '__main__':
         
         window.events.closed += on_closed
         
-        webview.start(debug=False)  # 开启调试模式，可以右键检查元素查看控制台
+        webview.start(debug=False)

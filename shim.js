@@ -1,7 +1,7 @@
 /**
- * 垫片层 (Shim Layer)
+ * 垫片层 (Shim Layer) - 简化版
  * 自动适配 pywebview 本地模式和浏览器模式
- * 最小侵入式设计：前端代码无需修改
+ * 真正的最小侵入式设计
  */
 
 (function() {
@@ -14,9 +14,7 @@
     
     if (isLocalMode) {
         console.log('✅ 本地模式 (pywebview)');
-        // 本地模式：直接使用 pywebview.api
-        // 不需要做任何事情，保持原样
-        return;
+        return; // 本地模式不需要任何处理
     }
     
     console.log('🌐 浏览器模式 (HTTP API)');
@@ -24,73 +22,36 @@
     // ==================== 浏览器模式垫片 ====================
     
     // 创建虚拟的 pywebview 对象
-    window.pywebview = {
-        api: {}
-    };
+    window.pywebview = { api: {} };
     
-    // ==================== 前端缓存管理 ====================
-    
-    // 合并文件缓存：{file_id: {blob: Blob, base64: string, name: string}}
+    // 前端缓存：合并后的文件
     window.mergedFilesCache = window.mergedFilesCache || {};
     
-    // 辅助函数：Blob 转 Base64
-    function blobToBase64(blob) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-    }
+    // ==================== 辅助函数 ====================
     
-    // 辅助函数：Base64 转 Blob
     function base64ToBlob(base64Data, contentType = 'application/pdf') {
         const arr = base64Data.split(',');
         const data = arr.length > 1 ? arr[1] : arr[0];
         const byteString = atob(data);
         const ab = new ArrayBuffer(byteString.length);
         const ia = new Uint8Array(ab);
-        
         for (let i = 0; i < byteString.length; i++) {
             ia[i] = byteString.charCodeAt(i);
         }
-        
         return new Blob([ab], { type: contentType });
     }
     
-    // 文件上传辅助函数
-    async function uploadFiles(files) {
-        const formData = new FormData();
-        for (let file of files) {
-            formData.append('files', file);
-        }
-        
-        const response = await fetch('/api/upload_files', {
-            method: 'POST',
-            body: formData
-        });
-        
-        return await response.json();
-    }
-    
-    // 下载文件辅助函数
-    function downloadFile(url, filename) {
+    function downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-    }
-    
-    // 下载 Blob 辅助函数
-    function downloadBlob(blob, filename) {
-        const url = URL.createObjectURL(blob);
-        downloadFile(url, filename);
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
     
-    // 下载Base64内容为文件
     function downloadBase64(base64Content, filename) {
         const byteCharacters = atob(base64Content);
         const byteNumbers = new Array(byteCharacters.length);
@@ -99,23 +60,60 @@
         }
         const byteArray = new Uint8Array(byteNumbers);
         const blob = new Blob([byteArray], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        downloadFile(url, filename);
-        URL.revokeObjectURL(url);
+        downloadBlob(blob, filename);
     }
     
-    // ==================== API 方法适配 ====================
+    // ==================== 自动生成 API 方法 ====================
+    
+    // 需要自动转换为 HTTP 调用的方法列表
+    const autoMethods = [
+        'get_file_info', 'get_page_image', 'get_routes', 'save_routes',
+        'generate_reimbursement_form', 'calculate_invoice_amounts',
+        'print_pdf', 'clear_files'
+    ];
+    
+    // 自动生成所有方法的 HTTP 调用
+    autoMethods.forEach(name => {
+        window.pywebview.api[name] = async function(...args) {
+            // 将参数转换为对象（假设参数名与位置对应）
+            const params = {};
+            if (args.length > 0) {
+                // 简单处理：第一个参数作为主参数
+                const argNames = {
+                    'get_file_info': ['file_path'],
+                    'get_page_image': ['file_path', 'page_index', 'quality'],
+                    'generate_reimbursement_form': ['file_paths', 'date_range'],
+                    'calculate_invoice_amounts': ['pages_info'],
+                    'print_pdf': ['file_path']
+                };
+                
+                const names = argNames[name] || [];
+                args.forEach((arg, i) => {
+                    if (names[i]) params[names[i]] = arg;
+                });
+            }
+            
+            const response = await fetch(`/api/${name}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(params)
+            });
+            return await response.json();
+        };
+    });
+    
+    // ==================== 特殊处理的方法 ====================
     
     /**
-     * 选择 PDF 文件（使用 HTML5 文件选择器）
+     * 文件选择：触发浏览器上传
      */
-    window.pywebview.api.select_pdfs = function() {
+    window.pywebview.api.select_pdfs = async function() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf';
+        input.multiple = true;
+        
         return new Promise((resolve) => {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.pdf';
-            input.multiple = true;
-            
             input.onchange = async (e) => {
                 const files = Array.from(e.target.files);
                 if (files.length === 0) {
@@ -124,7 +122,16 @@
                 }
                 
                 try {
-                    const result = await uploadFiles(files);
+                    const formData = new FormData();
+                    for (let file of files) {
+                        formData.append('files', file);
+                    }
+                    
+                    const response = await fetch('/api/upload_files', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
                     resolve(result);
                 } catch (error) {
                     console.error('上传失败:', error);
@@ -138,25 +145,13 @@
     };
     
     /**
-     * 获取页面图片
-     */
-    window.pywebview.api.get_page_image = async function(file_path, page_index, quality = 1.0) {
-        const response = await fetch('/api/get_page_image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file_path, page_index, quality })
-        });
-        return await response.json();
-    };
-    
-    /**
-     * 合并页面
+     * 合并页面：处理文件保存和缓存
      */
     window.pywebview.api.merge_pages = async function(page_list, output_path, mode = 'normal') {
         const response = await fetch('/api/merge_pages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ page_list, mode })
+            body: JSON.stringify({ page_list, output_path, mode })
         });
         
         const result = await response.json();
@@ -164,8 +159,6 @@
         if (result.success && result.pdf_content) {
             const fileId = result.output_path;
             const pdfBase64 = `data:application/pdf;base64,${result.pdf_content}`;
-            
-            // 转换为 Blob
             const pdfBlob = base64ToBlob(pdfBase64, 'application/pdf');
             
             // 缓存到前端
@@ -173,15 +166,14 @@
                 blob: pdfBlob,
                 base64: pdfBase64,
                 name: 'merged.pdf',
-                timestamp: Date.now(),
-                blobUrl: null  // 延迟创建
+                timestamp: Date.now()
             };
             
-            console.log(`✅ 文件已缓存: ${fileId}, 大小: ${(result.file_size / 1024).toFixed(2)} KB`);
+            console.log(`✅ 文件已缓存: ${fileId}`);
             
             // 处理文件保存
             if (output_path && typeof output_path === 'object' && output_path.createWritable) {
-                // 用户选择了保存位置（File System Access API）
+                // File System Access API
                 try {
                     const writable = await output_path.createWritable();
                     await writable.write(pdfBlob);
@@ -189,25 +181,22 @@
                     console.log('✅ 文件已保存到用户选择的位置');
                 } catch (err) {
                     console.error('❌ 保存文件失败:', err);
-                    // 降级：自动下载
                     downloadBlob(pdfBlob, 'merged.pdf');
                 }
-            } else if (output_path === 'browser_download.pdf') {
-                // 降级方案：自动下载到默认位置
+            } else if (output_path === 'BROWSER_DOWNLOAD') {
+                // 自动下载
                 downloadBlob(pdfBlob, 'merged.pdf');
-                console.log('✅ 文件已下载到浏览器默认位置');
+                console.log('✅ 文件已下载');
             }
-            // 如果 output_path 为 null，说明用户取消了保存
         }
         
         return result;
     };
     
     /**
-     * 保存文件对话框（使用 File System Access API）
+     * 保存文件对话框
      */
     window.pywebview.api.save_file_dialog = async function() {
-        // 检查浏览器是否支持 File System Access API
         if ('showSaveFilePicker' in window) {
             try {
                 const handle = await window.showSaveFilePicker({
@@ -217,75 +206,22 @@
                         accept: {'application/pdf': ['.pdf']}
                     }]
                 });
-                
-                console.log('✅ 用户选择了保存位置');
-                return handle;  // 返回文件句柄
+                return handle;
             } catch (err) {
                 if (err.name === 'AbortError') {
-                    console.log('⚠️ 用户取消了保存');
-                    return null;  // 用户取消
+                    return null; // 用户取消
                 }
-                console.error('❌ 文件保存对话框错误:', err);
-                return 'browser_download.pdf';  // 降级：自动下载
+                return 'BROWSER_DOWNLOAD'; // 降级
             }
-        } else {
-            console.log('⚠️ 浏览器不支持 File System Access API，将自动下载');
-            return 'browser_download.pdf';  // 降级：自动下载
         }
+        return 'BROWSER_DOWNLOAD';
     };
     
     /**
-     * 获取路线配置
-     */
-    window.pywebview.api.get_routes = async function() {
-        const response = await fetch('/api/get_routes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        return await response.json();
-    };
-    
-    /**
-     * 保存路线配置
-     */
-    window.pywebview.api.save_routes = async function(routes) {
-        const response = await fetch('/api/save_routes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ routes })
-        });
-        return await response.json();
-    };
-    
-    /**
-     * 生成报销单
-     */
-    window.pywebview.api.generate_reimbursement_form = async function(file_paths, date_range) {
-        const response = await fetch('/api/generate_reimbursement_form', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file_paths, date_range })
-        });
-        return await response.json();
-    };
-    
-    /**
-     * 计算发票金额
-     */
-    window.pywebview.api.calculate_invoice_amounts = async function(pages_info) {
-        const response = await fetch('/api/calculate_invoice_amounts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pages_info })
-        });
-        return await response.json();
-    };
-    
-    /**
-     * 保存 CSV 对话框（浏览器模式直接下载）
+     * CSV 保存对话框
      */
     window.pywebview.api.save_csv_dialog = async function() {
-        return 'browser_download.csv';
+        return 'BROWSER_DOWNLOAD';
     };
     
     /**
@@ -295,7 +231,7 @@
         const response = await fetch('/api/save_reimbursement_csv', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rows })
+            body: JSON.stringify({ path, rows })
         });
         
         const result = await response.json();
@@ -314,7 +250,7 @@
         const response = await fetch('/api/save_statistics_csv', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amounts })
+            body: JSON.stringify({ path, amounts })
         });
         
         const result = await response.json();
@@ -330,39 +266,7 @@
      * 保存 CSV 数据（通用）
      */
     window.pywebview.api.save_csv_data = async function(path, rows) {
-        // 复用报销单CSV的逻辑
         return await window.pywebview.api.save_reimbursement_csv(path, rows);
-    };
-    
-    /**
-     * 打印 PDF
-     */
-    window.pywebview.api.print_pdf = async function(file_path) {
-        const response = await fetch('/api/print_pdf', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file_path })
-        });
-        return await response.json();
-    };
-    
-    /**
-     * 清空文件（浏览器模式不需要实现）
-     */
-    window.pywebview.api.clear_files = async function() {
-        return true;
-    };
-    
-    /**
-     * 获取文件信息
-     */
-    window.pywebview.api.get_file_info = async function(file_path) {
-        const response = await fetch('/api/get_file_info', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file_path })
-        });
-        return await response.json();
     };
     
     console.log('✅ 垫片层加载完成');
