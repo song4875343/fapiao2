@@ -17,6 +17,6 @@ echo.
 echo 正在启动服务器...
 echo.
 
-python pdfm_v3.py --server --port 8000
+".venv\Scripts\python.exe"  pdfm_v3.py --server --port 8000
 
 pause

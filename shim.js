@@ -156,6 +156,27 @@
         
         const result = await response.json();
         
+        if (result.success && result.download_id) {
+            // 服务器模式：合并已完成，立即返回结果
+            console.log(`✅ 合并完成，文件大小: ${result.file_size} 字节`);
+            
+            // 异步触发下载（不阻塞返回）
+            setTimeout(() => {
+                const downloadUrl = `/api/download/${result.download_id}`;
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = 'merged.pdf';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                console.log('✅ 浏览器开始下载文件');
+            }, 100);
+            
+            // 立即返回结果，让前端显示详情
+            return result;
+        }
+        
+        // 旧的逻辑（兼容本地模式或HTTPS环境）
         if (result.success && result.pdf_content) {
             const fileId = result.output_path;
             const pdfBase64 = `data:application/pdf;base64,${result.pdf_content}`;
@@ -173,7 +194,7 @@
             
             // 处理文件保存
             if (output_path && typeof output_path === 'object' && output_path.createWritable) {
-                // File System Access API
+                // File System Access API 可用（localhost HTTPS环境）
                 try {
                     const writable = await output_path.createWritable();
                     await writable.write(pdfBlob);
@@ -183,10 +204,10 @@
                     console.error('❌ 保存文件失败:', err);
                     downloadBlob(pdfBlob, 'merged.pdf');
                 }
-            } else if (output_path === 'BROWSER_DOWNLOAD') {
-                // 自动下载
+            } else {
+                // 降级方案：直接下载（HTTP环境或API不可用）
                 downloadBlob(pdfBlob, 'merged.pdf');
-                console.log('✅ 文件已下载');
+                console.log('✅ 文件已自动下载');
             }
         }
         
@@ -197,6 +218,7 @@
      * 保存文件对话框
      */
     window.pywebview.api.save_file_dialog = async function() {
+        // 检查是否支持 File System Access API（仅 localhost 或 HTTPS）
         if ('showSaveFilePicker' in window) {
             try {
                 const handle = await window.showSaveFilePicker({
@@ -209,11 +231,15 @@
                 return handle;
             } catch (err) {
                 if (err.name === 'AbortError') {
+                    console.log('用户取消了文件保存');
                     return null; // 用户取消
                 }
+                console.warn('showSaveFilePicker 失败，降级到自动下载:', err);
                 return 'BROWSER_DOWNLOAD'; // 降级
             }
         }
+        // API 不可用（HTTP 非 localhost 环境），直接返回降级标记
+        console.log('showSaveFilePicker 不可用，将使用自动下载');
         return 'BROWSER_DOWNLOAD';
     };
     
@@ -221,6 +247,27 @@
      * CSV 保存对话框
      */
     window.pywebview.api.save_csv_dialog = async function() {
+        // 检查是否支持 File System Access API
+        if ('showSaveFilePicker' in window) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: '报销单.csv',
+                    types: [{
+                        description: 'CSV Files',
+                        accept: {'text/csv': ['.csv']}
+                    }]
+                });
+                return handle;
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    console.log('用户取消了CSV保存');
+                    return null;
+                }
+                console.warn('showSaveFilePicker 失败，降级到自动下载:', err);
+                return 'BROWSER_DOWNLOAD';
+            }
+        }
+        console.log('showSaveFilePicker 不可用，CSV将自动下载');
         return 'BROWSER_DOWNLOAD';
     };
     
@@ -237,7 +284,24 @@
         const result = await response.json();
         
         if (result.success && result.content) {
-            downloadBase64(result.content, result.filename);
+            // 处理文件保存
+            if (path && typeof path === 'object' && path.createWritable) {
+                // File System Access API 可用
+                try {
+                    const blob = base64ToBlob(result.content, 'text/csv;charset=utf-8;');
+                    const writable = await path.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    console.log('✅ CSV已保存到用户选择的位置');
+                } catch (err) {
+                    console.error('❌ 保存CSV失败:', err);
+                    downloadBase64(result.content, result.filename);
+                }
+            } else {
+                // 降级方案：直接下载
+                downloadBase64(result.content, result.filename);
+                console.log('✅ CSV已自动下载');
+            }
         }
         
         return result;
@@ -256,7 +320,24 @@
         const result = await response.json();
         
         if (result.success && result.content) {
-            downloadBase64(result.content, result.filename);
+            // 处理文件保存
+            if (path && typeof path === 'object' && path.createWritable) {
+                // File System Access API 可用
+                try {
+                    const blob = base64ToBlob(result.content, 'text/csv;charset=utf-8;');
+                    const writable = await path.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    console.log('✅ CSV已保存到用户选择的位置');
+                } catch (err) {
+                    console.error('❌ 保存CSV失败:', err);
+                    downloadBase64(result.content, result.filename);
+                }
+            } else {
+                // 降级方案：直接下载
+                downloadBase64(result.content, result.filename);
+                console.log('✅ CSV已自动下载');
+            }
         }
         
         return result;

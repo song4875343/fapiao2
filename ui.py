@@ -598,6 +598,51 @@ html_content = """
         // 记录当前右键激活的列表项
         let activeContextItem = null;
         
+        // ========== 请求队列控制器 ==========
+        const ImageQueue = {
+            queue: [],
+            processing: 0,
+            maxConcurrent: 2, // ⚡️ 关键：只允许同时加载 2 张图片，防止堵死
+            
+            // 添加任务
+            add: function(taskFn) {
+                return new Promise((resolve, reject) => {
+                    this.queue.push({
+                        fn: taskFn,
+                        resolve: resolve,
+                        reject: reject
+                    });
+                    this.run();
+                });
+            },
+            
+            // 执行队列
+            run: function() {
+                if (this.processing >= this.maxConcurrent || this.queue.length === 0) {
+                    return;
+                }
+                
+                this.processing++;
+                // 取出队列中的第一个任务（先进先出）
+                const task = this.queue.shift();
+                
+                // 执行任务
+                task.fn()
+                    .then(res => task.resolve(res))
+                    .catch(err => task.reject(err))
+                    .finally(() => {
+                        this.processing--;
+                        this.run(); // 递归触发下一个
+                    });
+            },
+            
+            // 清空队列（切换文件时调用）
+            clear: function() {
+                this.queue = [];
+                this.processing = 0;
+            }
+        };
+        
         // 记录从哪个模态框跳转到预览的
         let previewSourceModal = null;
         
@@ -1045,8 +1090,8 @@ html_content = """
             div.appendChild(img);
             c.appendChild(div);
             
-            // 加载高清图
-            const res = await pywebview.api.get_page_image(sourceFile.path, pageNum, 5.0);
+            // 加载高清图（单页预览使用 4.0 清晰度）
+            const res = await pywebview.api.get_page_image(sourceFile.path, pageNum, 4.0);
             if (res.success) {
                 img.src = res.image;
                 img.dataset.status = 'hd';
@@ -1475,8 +1520,8 @@ html_content = """
             div.appendChild(img); 
             c.appendChild(div);
             
-            // 加载高清图
-            loadHighResImage(div, img);
+            // 加载高清图（单页预览使用 4.0 清晰度）
+            loadHighResImage(div, img, 4.0);
         }
         
         async function startMerge() { 
@@ -1567,6 +1612,9 @@ html_content = """
         function findCachedThumb(path, index) { const p = allPages.find(x => x.path === path && x.pageIndex === index); if (p) { const el = document.getElementById(`img-${p.id}`); if (el && el.src.startsWith('data:')) return el.src; } return null; }
         
         async function loadReview(path) {
+            // ⚡️ 切换文件时，清空之前的等待队列
+            ImageQueue.clear();
+            
             currentReviewFilePath = path;  // 保存当前预览的文件路径
             
             // 切换到预览视图
@@ -1630,7 +1678,7 @@ html_content = """
                             img.dataset.status = 'thumb';
                         }
                     }
-                    loadHighResImage(div, img);
+                    loadHighResImage(div, img, 2.0);
                 }
             };
             
@@ -1642,22 +1690,65 @@ html_content = """
                     if (entry.isIntersecting) {
                         const div = entry.target;
                         const img = div.querySelector('img');
-                        if (!img.src || img.dataset.status === 'thumb') {
-                            loadHighResImage(div, img);
+                        // 只有非高清图才请求
+                        if (!img.src || img.dataset.status !== 'hd') {
+                            // 调用队列版函数
+                            loadHighResImage(div, img, 2.0).then(() => {
+                                // 加载成功后取消观察
+                                if (img.dataset.status === 'hd') {
+                                    observer.unobserve(div);
+                                }
+                            }).catch(() => {
+                                console.log('加载失败，保持观察状态以便重试');
+                            });
+                        } else {
+                            // 已经是高清图，直接取消观察
+                            observer.unobserve(div);
                         }
-                        observer.unobserve(div);
                     }
                 });
             }, {
                 root: document.getElementById('reviewView'),
-                rootMargin: '200px',
+                rootMargin: '500px',
                 threshold: 0.01
             });
             
             document.querySelectorAll('.review-page').forEach(div => reviewObserver.observe(div));
         }
 
-        async function loadHighResImage(div, img) { if (div.dataset.loading === 'true') return; div.dataset.loading = 'true'; const res = await pywebview.api.get_page_image(div.dataset.path, parseInt(div.dataset.index), 5.0); if (res.success) { img.src = res.image; img.dataset.status = 'hd'; const l = div.querySelector('.review-loading'); if (l) l.remove(); } delete div.dataset.loading; }
+        async function loadHighResImage(div, img, quality = 2.0) { 
+            // 防止重复加载
+            if (div.dataset.loading === 'true' || img.dataset.status === 'hd') return Promise.resolve(); 
+            div.dataset.loading = 'true'; 
+            
+            // ⚡️ 将实际的请求逻辑包装成一个函数
+            const requestTask = async () => {
+                try {
+                    const res = await pywebview.api.get_page_image(div.dataset.path, parseInt(div.dataset.index), quality);
+                    return res;
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            };
+            
+            // ⚡️ 加入队列，等待调度
+            return ImageQueue.add(requestTask).then(res => {
+                if (res.success) { 
+                    img.src = res.image; 
+                    img.dataset.status = 'hd'; 
+                    const l = div.querySelector('.review-loading'); 
+                    if (l) l.remove(); 
+                    delete div.dataset.loading;
+                } else {
+                    // 加载失败，允许重试（移除 loading 标记）
+                    console.error('加载失败:', res.error);
+                    delete div.dataset.loading; 
+                }
+            }).catch(err => {
+                console.error('队列执行错误:', err);
+                delete div.dataset.loading;
+            });
+        }
         
         function switchToWorkspace() { 
             if (reviewObserver) reviewObserver.disconnect(); 

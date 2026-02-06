@@ -255,26 +255,32 @@ class PDFMergerAPI:
             except Exception as e:
                 print(f"缩略图生成失败: {e}")
 
-            return {
+            # 构建基础返回结果
+            result = {
                 'success': True, 
                 'message': success_msg, 
                 'output_path': output_path,
                 'thumbnail': first_page_thumb
             }
             
-            # 服务器模式：返回PDF内容并记录映射
+            # 服务器模式：不再返回PDF内容，只返回下载ID
             if self.mode == 'server':
-                with open(output_path, 'rb') as f:
-                    pdf_content = f.read()
-                pdf_base64 = base64.b64encode(pdf_content).decode()
-                
-                # 记录映射（用于后续预览）
-                output_id = os.path.basename(output_path).replace('merged_', '').replace('.pdf', '')
-                self.file_mapping[output_id] = output_path
-                
-                result['output_path'] = output_id
-                result['pdf_content'] = pdf_base64
-                result['file_size'] = len(pdf_content)
+                try:
+                    # 记录映射（用于后续下载）
+                    output_id = os.path.basename(output_path).replace('merged_', '').replace('.pdf', '')
+                    self.file_mapping[output_id] = output_path
+                    
+                    # 获取文件大小
+                    file_size = os.path.getsize(output_path)
+                    
+                    result['output_path'] = output_id
+                    result['download_id'] = output_id  # 用于下载的ID
+                    result['file_size'] = file_size
+                    
+                    print(f"✅ 服务器模式：合并完成，文件大小 {file_size} 字节，下载ID: {output_id}")
+                except Exception as e:
+                    print(f"❌ 处理文件失败: {e}")
+                    return {'success': False, 'error': f'处理文件失败: {str(e)}'}
             
             return result
 
@@ -358,6 +364,23 @@ class PDFMergerAPI:
     
     def clear_files(self):
         return True
+    
+    def download_merged_pdf(self, file_id):
+        """
+        下载合并后的PDF文件（服务器模式专用）
+        返回文件路径供FastAPI直接发送文件
+        """
+        if self.mode != 'server':
+            return {'success': False, 'error': '仅服务器模式可用'}
+        
+        if file_id not in self.file_mapping:
+            return {'success': False, 'error': '文件不存在'}
+        
+        file_path = self.file_mapping[file_id]
+        if not os.path.exists(file_path):
+            return {'success': False, 'error': '文件已被删除'}
+        
+        return {'success': True, 'file_path': file_path}
 
 # --- 新增：报销单相关 API ---
     def get_routes(self):
@@ -868,6 +891,20 @@ def create_auto_server(api_instance, host='0.0.0.0', port=8000):
             files_data.append((file.filename, content))
         result = api_instance.upload_files(files_data)
         return result
+    
+    # 特殊处理：文件下载
+    @app.get("/api/download/{file_id}")
+    async def download_file(file_id: str):
+        from fastapi.responses import FileResponse
+        result = api_instance.download_merged_pdf(file_id)
+        if result['success']:
+            return FileResponse(
+                path=result['file_path'],
+                filename='merged.pdf',
+                media_type='application/pdf'
+            )
+        else:
+            return {'success': False, 'error': result.get('error', '未知错误')}
     
     # 自动生成所有方法的路由
     for name, method in inspect.getmembers(api_instance, predicate=inspect.ismethod):

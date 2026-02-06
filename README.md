@@ -2,6 +2,18 @@
 
 一个功能强大的本地化 PDF 处理工具，基于 Python (`pywebview`) 构建。不仅支持可视化的 PDF 合并与编辑，还集成了智能化的发票报销辅助功能。
 
+---
+
+## 🌐 在线体验
+
+**不想安装？直接在线使用！**
+
+👉 **[立即体验](http://120.48.88.67:8002/)** 👈
+
+无需下载安装，打开浏览器即可使用完整功能。支持手机、平板、电脑等所有设备。
+
+---
+
 ## 🌟 主要功能
 
 ### 1. PDF 可视化处理
@@ -53,14 +65,24 @@
 
 ### 2. 安装依赖
 
+**推荐使用 uv（更快更可靠）**：
+
 ```bash
-pip install -r requirements.txt
+# 安装 uv (如果还没安装)
+# Windows PowerShell:
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Linux/Mac:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 同步依赖
+uv sync
 ```
 
-或手动安装：
+**或使用传统 pip**：
 
 ```bash
-pip install pywebview PyMuPDF PyPDF2 fastapi uvicorn python-multipart
+pip install -r requirements.txt
 ```
 
 ### 3. 运行程序
@@ -68,6 +90,10 @@ pip install pywebview PyMuPDF PyPDF2 fastapi uvicorn python-multipart
 **本地模式（推荐）**：
 
 ```bash
+# 使用 uv
+uv run python pdfm_v3.py
+
+# 或直接使用 python
 python pdfm_v3.py
 ```
 
@@ -76,17 +102,21 @@ python pdfm_v3.py
 **服务器模式**：
 
 ```bash
+# 使用 uv
+uv run python pdfm_v3.py --server
+
+# 或直接使用 python
 python pdfm_v3.py --server
 ```
 
 或使用快捷脚本：
 
 ```bash
-# Windows CMD
-run_server.bat
+# Windows
+deploy.bat
 
-# Windows PowerShell
-.\run_server.ps1
+# Linux/Mac
+bash deploy.sh
 ```
 
 启动后在浏览器访问 `http://localhost:8000` 即可使用。支持局域网内多设备访问。
@@ -160,12 +190,22 @@ run_server.bat
 
 ## 💡 使用场景
 
-**本地模式**：适合个人日常使用，启动快速，无需网络。
+**在线体验模式**：
+- 🌐 **[在线访问](http://120.48.88.67:8002/)**：无需安装，打开浏览器即可使用
+- 📱 支持所有设备：手机、平板、电脑均可访问
+- 🚀 零配置：无需安装 Python 或任何依赖
+- 👥 适合临时使用或向他人展示功能
 
-**服务器模式**：适合以下场景：
-- 在服务器上部署，团队成员通过浏览器访问
-- 需要在平板、手机等移动设备上使用
-- 跨平台使用（服务器运行在 Linux，客户端使用 Windows/Mac 浏览器）
+**本地模式**：
+- 💻 适合个人日常使用，启动快速，无需网络
+- 🔒 数据完全本地处理，更安全私密
+- ⚡ 性能更好，响应更快
+
+**服务器模式**：
+- 🏢 在服务器上部署，团队成员通过浏览器访问
+- 📱 需要在平板、手机等移动设备上使用
+- 🌍 跨平台使用（服务器运行在 Linux，客户端使用 Windows/Mac 浏览器）
+- 🔗 可以部署在公网，提供在线服务（如本项目的在线体验站）
 
 ---
 

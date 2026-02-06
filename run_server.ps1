@@ -17,6 +17,6 @@ Write-Host ""
 Write-Host "正在启动服务器..." -ForegroundColor Green
 Write-Host ""
 
-python pdfm_v3.py --server --port 8000
+".venv\Scripts\python.exe" pdfm_v3.py --server --port 8000
 
 Read-Host "按 Enter 键退出"

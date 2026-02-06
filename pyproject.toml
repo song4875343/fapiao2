@@ -1,0 +1,29 @@
+[project]
+name = "pdf-merger-pro"
+version = "3.4.0"
+description = "发票合并调整工具 - 专业版 (PDF Merger Pro v3)"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pywebview>=4.0",
+    "PyPDF2>=3.0.0",
+    "Pillow>=9.0.0",
+    "reportlab>=4.0.0",
+    "PyMuPDF>=1.23.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "python-multipart>=0.0.6",
+]
+
+[project.scripts]
+pdfm = "pdfm_v3:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["pdfm_v3.py"]
+
+[tool.uv]
+dev-dependencies = []
