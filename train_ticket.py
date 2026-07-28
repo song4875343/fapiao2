@@ -23,6 +23,11 @@ def _compact(text):
     return re.sub(r"\s+", " ", text or "").strip()
 
 
+def is_train_ticket_text(text):
+    """Return whether extracted PDF text belongs to a railway e-ticket."""
+    return "铁路电子客票" in _compact(text)
+
+
 def _extract_station_lines(page):
     candidates = []
     page_dict = page.get_text("dict")
@@ -69,7 +74,7 @@ def extract_ticket(pdf_path, page_index=0, source=None):
         page = doc[page_index]
         text = page.get_text()
         compact_text = _compact(text)
-        if "铁路电子客票" not in compact_text:
+        if not is_train_ticket_text(text):
             raise ValueError("不是铁路电子客票")
         is_refund = "退票" in compact_text
 

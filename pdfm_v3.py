@@ -757,9 +757,48 @@ class PDFMergerAPI:
                     
                     page = doc[page_index]
                     text = page.get_text()
+
+                    # 铁路电子客票复用“高铁票表单”的成熟识别逻辑。
+                    # 普通客票统计票价；退票凭证统计实际发生的退票费。
+                    if train_ticket.is_train_ticket_text(text):
+                        doc.close()
+                        ticket = train_ticket.extract_ticket(path, page_index, page_label)
+                        invoice_no = ticket.get('invoiceNo')
+                        if invoice_no == '未识别':
+                            invoice_no = None
+                        amount = (
+                            ticket.get('refundFee', '0.00')
+                            if float(ticket.get('refundFee', 0) or 0) > 0
+                            else ticket.get('amount', '0.00')
+                        )
+
+                        if invoice_no:
+                            if invoice_no in invoice_dict:
+                                invoice_dict[invoice_no]['pages'].append(page_label)
+                                invoice_dict[invoice_no]['isDuplicate'] = True
+                            else:
+                                invoice_dict[invoice_no] = {
+                                    'amount': amount,
+                                    'invoiceNo': invoice_no,
+                                    'pages': [page_label],
+                                    'isDuplicate': False,
+                                    'fileName': file_name,
+                                    'pageIndex': page_index
+                                }
+                        else:
+                            unrecognized_invoices.append({
+                                'amount': amount,
+                                'invoiceNo': '未识别',
+                                'pages': [page_label],
+                                'isDuplicate': False,
+                                'fileName': file_name,
+                                'pageIndex': page_index
+                            })
+                        continue
                     
-                    # 提取发票号码（使用坐标定位，更准确）
+                    # 提取发票号码（优先使用“发票号码”标签定位）
                     invoice_no = None
+                    has_invoice_label = "发票号码" in text
                     
                     try:
                         # 获取页面上所有文本块及其坐标
@@ -767,6 +806,7 @@ class PDFMergerAPI:
                         
                         # 查找"发票号码"关键字的位置
                         keyword_rect = None
+                        keyword_text = None
                         for block in blocks:
                             if "lines" in block:
                                 for line in block["lines"]:
@@ -774,16 +814,27 @@ class PDFMergerAPI:
                                         text_content = span["text"]
                                         if "发票号码" in text_content:
                                             keyword_rect = span["bbox"]  # (x0, y0, x1, y1)
+                                            keyword_text = text_content
                                             break
                                     if keyword_rect:
                                         break
                             if keyword_rect:
                                 break
                         
-                        # 如果找到了"发票号码"，查找同一行右侧的数字
+                        # 如果号码和标签在同一个文本块中，直接提取。
                         if keyword_rect:
+                            inline_text = keyword_text.split("发票号码", 1)[1]
+                            inline_match = re.search(r'(?<!\d)(\d{18,20})(?!\d)', inline_text)
+                            if inline_match:
+                                invoice_no = inline_match.group(1)
+
+                        # 否则只查找标签同一基线且位于其右侧的18-20位数字。
+                        # 备注区的银行账号即使长度相同，也不会进入候选。
+                        if keyword_rect and not invoice_no:
                             kw_y0, kw_y1 = keyword_rect[1], keyword_rect[3]
                             kw_x1 = keyword_rect[2]  # 关键字右边界
+                            kw_center_y = (kw_y0 + kw_y1) / 2
+                            kw_height = kw_y1 - kw_y0
                             
                             # 查找与"发票号码"在同一水平线上的文本
                             candidates = []
@@ -796,14 +847,17 @@ class PDFMergerAPI:
                                             span_x0 = span_bbox[0]
                                             span_text = span["text"].strip()
                                             
-                                            # 判断是否在同一行（Y坐标接近）
-                                            y_overlap = not (span_y1 < kw_y0 or span_y0 > kw_y1)
+                                            # 用文本基线中心判断同一行，避免仅有边缘重叠的备注文本。
+                                            span_center_y = (span_y0 + span_y1) / 2
+                                            span_height = span_y1 - span_y0
+                                            same_line = abs(span_center_y - kw_center_y) <= max(
+                                                2.0, min(kw_height, span_height) * 0.25
+                                            )
                                             # 在关键字右侧
-                                            is_right = span_x0 >= kw_x1 - 10  # 允许10像素误差
-                                            # 是数字
-                                            is_number = span_text.isdigit() and len(span_text) >= 8
+                                            is_right = span_x0 >= kw_x1 - 2
+                                            number_match = re.fullmatch(r'\d{18,20}', span_text)
                                             
-                                            if y_overlap and is_right and is_number:
+                                            if same_line and is_right and number_match:
                                                 # 记录候选项：(距离, 文本)
                                                 distance = span_x0 - kw_x1
                                                 candidates.append((distance, span_text))
@@ -816,17 +870,19 @@ class PDFMergerAPI:
                     except Exception as e:
                         print(f"坐标定位失败: {e}")
                     
-                    # 备用方案：如果坐标定位失败，使用简单的数字查找
+                    # 坐标定位失败时，仍然只匹配“发票号码”标签紧邻的号码。
                     if not invoice_no:
-                        # 查找20位数字
-                        matches_20 = re.findall(r'\b(\d{20})\b', text)
-                        if matches_20:
-                            invoice_no = matches_20[0]
-                        # 查找18-19位数字
-                        elif not invoice_no:
-                            matches_18_19 = re.findall(r'\b(\d{18,19})\b', text)
-                            if matches_18_19:
-                                invoice_no = matches_18_19[0]
+                        labeled_match = re.search(
+                            r'发票号码[：:\s]*?(\d{18,20})(?!\d)', text
+                        )
+                        if labeled_match:
+                            invoice_no = labeled_match.group(1)
+
+                    # 兼容没有“发票号码”标签的旧版票据；有标签时绝不从备注区猜号码。
+                    if not invoice_no and not has_invoice_label:
+                        generic_match = re.search(r'\b(\d{18,20})\b', text)
+                        if generic_match:
+                            invoice_no = generic_match.group(1)
                     
                     # 提取金额（使用坐标定位，查找"小写"后面的金额）
                     amount = '0.00'

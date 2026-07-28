@@ -101,19 +101,72 @@ class ReimbursementLogic:
                         except:
                             pass
                 
-                # 提取发票号（查找"发票号码"）
-                if '发票号码' in text:
-                    idx = text.find('发票号码')
-                    after_text = text[idx:idx+200]
-                    match = re.search(r'(\d{18,20})', after_text)
-                    if match:
-                        invoice_no = match.group(1)
-                
-                # 备用：查找20位数字
+                # 提取发票号：只接受“发票号码”标签内或同行右侧的18-20位数字。
+                keyword_rect = None
+                keyword_text = None
+                for block in blocks:
+                    if "lines" in block:
+                        for line in block["lines"]:
+                            for span in line["spans"]:
+                                if "发票号码" in span["text"]:
+                                    keyword_rect = span["bbox"]
+                                    keyword_text = span["text"]
+                                    break
+                            if keyword_rect:
+                                break
+                    if keyword_rect:
+                        break
+
+                if keyword_rect:
+                    inline_text = keyword_text.split("发票号码", 1)[1]
+                    inline_match = re.search(r'(?<!\d)(\d{18,20})(?!\d)', inline_text)
+                    if inline_match:
+                        invoice_no = inline_match.group(1)
+
+                if keyword_rect and not invoice_no:
+                    kw_y0, kw_y1 = keyword_rect[1], keyword_rect[3]
+                    kw_x1 = keyword_rect[2]
+                    kw_center_y = (kw_y0 + kw_y1) / 2
+                    kw_height = kw_y1 - kw_y0
+                    candidates = []
+
+                    for block in blocks:
+                        if "lines" in block:
+                            for line in block["lines"]:
+                                for span in line["spans"]:
+                                    span_x0, span_y0, _, span_y1 = span["bbox"]
+                                    span_text = span["text"].strip()
+                                    span_center_y = (span_y0 + span_y1) / 2
+                                    span_height = span_y1 - span_y0
+                                    same_line = abs(span_center_y - kw_center_y) <= max(
+                                        2.0, min(kw_height, span_height) * 0.25
+                                    )
+                                    is_right = span_x0 >= kw_x1 - 2
+
+                                    if (
+                                        same_line
+                                        and is_right
+                                        and re.fullmatch(r'\d{18,20}', span_text)
+                                    ):
+                                        candidates.append((span_x0 - kw_x1, span_text))
+
+                    if candidates:
+                        candidates.sort(key=lambda item: item[0])
+                        invoice_no = candidates[0][1]
+
+                # 坐标定位失败时也必须与“发票号码”标签紧邻，避免命中备注银行账号。
                 if not invoice_no:
-                    matches_20 = re.findall(r'\b(\d{20})\b', text)
-                    if matches_20:
-                        invoice_no = matches_20[0]
+                    labeled_match = re.search(
+                        r'发票号码[：:\s]*?(\d{18,20})(?!\d)', text
+                    )
+                    if labeled_match:
+                        invoice_no = labeled_match.group(1)
+
+                # 兼容完全没有“发票号码”标签的旧版票据。
+                if not invoice_no and "发票号码" not in text:
+                    generic_match = re.search(r'\b(\d{18,20})\b', text)
+                    if generic_match:
+                        invoice_no = generic_match.group(1)
             
             except Exception as e:
                 print(f"坐标定位失败: {e}")
