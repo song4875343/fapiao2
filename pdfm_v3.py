@@ -6,10 +6,14 @@ import time
 from io import BytesIO
 import PyPDF2
 from PyPDF2 import PdfWriter, PdfReader
-import webview
+try:
+    import webview
+except ImportError:
+    webview = None
 import traceback
 import sys
 import filltable
+import train_ticket
 import csv
 # HTML界面
 import ui
@@ -418,7 +422,103 @@ class PDFMergerAPI:
         
         return filltable.logic.generate_data(paths, date_range)
 
-    def save_csv_dialog(self):
+    def generate_train_ticket_form(self, pages):
+        """提取所选铁路电子客票，并按出行日期、发车时间排序。"""
+        resolved_pages = []
+        for page in pages or []:
+            item = dict(page)
+            path = item.get('path')
+            if self.mode == 'server' and path in self.file_mapping:
+                item['path'] = self.file_mapping[path]
+            resolved_pages.append(item)
+        return train_ticket.generate_form(resolved_pages)
+
+    def get_page_size_categories(self, pages):
+        """Return physical page-size categories for the selected PDF pages."""
+        import fitz
+
+        categories = {}
+        for item in pages or []:
+            path = item.get('path')
+            if self.mode == 'server' and path in self.file_mapping:
+                path = self.file_mapping[path]
+            page_index = int(item.get('pageIndex', item.get('page_index', 0)))
+            try:
+                doc = fitz.open(path)
+                page = doc[page_index]
+                short_side = min(page.rect.width, page.rect.height)
+                long_side = max(page.rect.width, page.rect.height)
+                doc.close()
+            except Exception as e:
+                return {'success': False, 'error': f"读取页面尺寸失败：{e}"}
+
+            category_id = f"{short_side:.1f}:{long_side:.1f}"
+            if category_id not in categories:
+                categories[category_id] = {
+                    'id': category_id,
+                    'shortSide': round(short_side, 3),
+                    'longSide': round(long_side, 3),
+                    'label': f"{short_side / 72 * 25.4:.0f} × {long_side / 72 * 25.4:.0f} mm",
+                    'count': 0,
+                }
+            categories[category_id]['count'] += 1
+
+        result = sorted(categories.values(), key=lambda item: (-item['count'], item['shortSide'], item['longSide']))
+        if not result:
+            return {'success': False, 'error': '请先选择页面'}
+        return {'success': True, 'categories': result, 'defaultCategoryId': result[0]['id']}
+
+    def normalize_page_sizes(self, pages, target_short_side):
+        """Scale selected pages uniformly so their short edge matches the target."""
+        import fitz
+        import tempfile
+        from pathlib import Path
+
+        try:
+            target_short_side = float(target_short_side)
+            if target_short_side <= 0:
+                return {'success': False, 'error': '目标尺寸无效'}
+
+            output_dir = self.temp_dir or (Path(tempfile.gettempdir()) / 'pdfm_normalized')
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"normalized_{uuid.uuid4().hex}.pdf"
+            output_doc = fitz.open()
+            results = []
+
+            for item in pages or []:
+                path = item.get('path')
+                if self.mode == 'server' and path in self.file_mapping:
+                    path = self.file_mapping[path]
+                page_index = int(item.get('pageIndex', item.get('page_index', 0)))
+                src_doc = fitz.open(path)
+                try:
+                    src_page = src_doc[page_index]
+                    rect = src_page.rect
+                    scale = target_short_side / min(rect.width, rect.height)
+                    new_page = output_doc.new_page(width=rect.width * scale, height=rect.height * scale)
+                    new_page.show_pdf_page(new_page.rect, src_doc, page_index)
+                    results.append({
+                        'clientId': item.get('clientId'),
+                        'pageIndex': output_doc.page_count - 1,
+                        'width': round(new_page.rect.width, 3),
+                        'height': round(new_page.rect.height, 3),
+                    })
+                finally:
+                    src_doc.close()
+
+            output_doc.save(str(output_path))
+            output_doc.close()
+            if self.mode == 'server':
+                file_id = uuid.uuid4().hex
+                self.file_mapping[file_id] = str(output_path)
+                result_path = file_id
+            else:
+                result_path = str(output_path)
+            return {'success': True, 'path': result_path, 'pages': results}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def save_csv_dialog(self, filename='报销单.csv'):
         """打开保存CSV对话框"""
         if self.mode == 'server':
             # 服务器模式：返回特殊标记，让前端触发下载
@@ -426,7 +526,7 @@ class PDFMergerAPI:
         
         # 本地模式：使用系统文件对话框
         file_types = ('CSV Files (*.csv)', 'All Files (*.*)')
-        result = window.create_file_dialog(webview.FileDialog.SAVE, file_types=file_types, save_filename='报销单.csv')
+        result = window.create_file_dialog(webview.FileDialog.SAVE, file_types=file_types, save_filename=filename)
         if result:
             if isinstance(result, (list, tuple)):
                 if len(result) > 0: return str(result[0])
@@ -488,6 +588,52 @@ class PDFMergerAPI:
                                    r['people'], r['date'], r['start'], r['end'], r['amount']])
                     total += float(r['amount'])
                 writer.writerow(['', '', '', '', '', '', '合计', f'{total:.2f}'])
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def save_train_ticket_csv(self, path, rows):
+        """保存按日期分组的高铁票表单。"""
+        try:
+            from io import StringIO
+
+            output = StringIO() if self.mode == 'server' else None
+            stream = output if output is not None else open(path, 'w', newline='', encoding='utf-8-sig')
+            try:
+                writer = csv.writer(stream)
+                writer.writerow(['日期', '发车时间', '行程', '车次', '金额', '退票费', '来源'])
+                current_date = None
+                group_fare_total = 0.0
+                group_refund_total = 0.0
+                fare_total = 0.0
+                refund_total = 0.0
+                for row in rows:
+                    if current_date is not None and row['date'] != current_date:
+                        writer.writerow([current_date, '', '小计', '', f'{group_fare_total:.2f}', f'{group_refund_total:.2f}', ''])
+                        group_fare_total = 0.0
+                        group_refund_total = 0.0
+                    current_date = row['date']
+                    amount = float(row['amount'])
+                    refund_fee = float(row.get('refundFee', 0))
+                    group_fare_total += amount
+                    group_refund_total += refund_fee
+                    fare_total += amount
+                    refund_total += refund_fee
+                    writer.writerow([
+                        row['date'], row['time'], row['route'], row.get('trainNo', ''),
+                        f'{amount:.2f}', f'{refund_fee:.2f}', row.get('source', '')
+                    ])
+                if current_date is not None:
+                    writer.writerow([current_date, '', '小计', '', f'{group_fare_total:.2f}', f'{group_refund_total:.2f}', ''])
+                writer.writerow(['', '', '票价合计（不含退票费）', '', f'{fare_total:.2f}', '', ''])
+                writer.writerow(['', '', '总计（含退票费）', '', f'{fare_total + refund_total:.2f}', f'{refund_total:.2f}', ''])
+            finally:
+                if output is None:
+                    stream.close()
+
+            if output is not None:
+                content = base64.b64encode(output.getvalue().encode('utf-8-sig')).decode()
+                return {'success': True, 'content': content, 'filename': '高铁票表单.csv'}
             return {'success': True}
         except Exception as e:
             return {'success': False, 'error': str(e)}
@@ -962,6 +1108,9 @@ if __name__ == '__main__':
             sys.exit(1)
     else:
         # ==================== 本地模式 (pywebview) ====================
+        if webview is None:
+            print("❌ 错误：桌面模式需要 pywebview，请先安装项目依赖")
+            sys.exit(1)
         api = PDFMergerAPI(mode='local')
         
         # 将 HTML 写入临时文件

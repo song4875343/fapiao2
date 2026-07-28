@@ -67,8 +67,8 @@
     
     // 需要自动转换为 HTTP 调用的方法列表
     const autoMethods = [
-        'get_file_info', 'get_page_image', 'get_routes', 'save_routes',
-        'generate_reimbursement_form', 'calculate_invoice_amounts',
+        'get_file_info', 'get_page_image', 'get_page_size_categories', 'normalize_page_sizes', 'get_routes', 'save_routes',
+        'generate_reimbursement_form', 'generate_train_ticket_form', 'calculate_invoice_amounts',
         'print_pdf', 'clear_files'
     ];
     
@@ -82,7 +82,10 @@
                 const argNames = {
                     'get_file_info': ['file_path'],
                     'get_page_image': ['file_path', 'page_index', 'quality'],
+                    'get_page_size_categories': ['pages'],
+                    'normalize_page_sizes': ['pages', 'target_short_side'],
                     'generate_reimbursement_form': ['file_paths', 'date_range'],
+                    'generate_train_ticket_form': ['pages'],
                     'calculate_invoice_amounts': ['pages_info'],
                     'print_pdf': ['file_path']
                 };
@@ -246,12 +249,12 @@
     /**
      * CSV 保存对话框
      */
-    window.pywebview.api.save_csv_dialog = async function() {
+    window.pywebview.api.save_csv_dialog = async function(filename = '报销单.csv') {
         // 检查是否支持 File System Access API
         if ('showSaveFilePicker' in window) {
             try {
                 const handle = await window.showSaveFilePicker({
-                    suggestedName: '报销单.csv',
+                    suggestedName: filename,
                     types: [{
                         description: 'CSV Files',
                         accept: {'text/csv': ['.csv']}
@@ -304,6 +307,35 @@
             }
         }
         
+        return result;
+    };
+
+    /**
+     * 保存高铁票表单 CSV
+     */
+    window.pywebview.api.save_train_ticket_csv = async function(path, rows) {
+        const response = await fetch('/api/save_train_ticket_csv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: typeof path === 'string' ? path : 'BROWSER_DOWNLOAD', rows })
+        });
+
+        const result = await response.json();
+        if (result.success && result.content) {
+            if (path && typeof path === 'object' && path.createWritable) {
+                try {
+                    const blob = base64ToBlob(result.content, 'text/csv;charset=utf-8;');
+                    const writable = await path.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                } catch (err) {
+                    console.error('保存高铁票表单失败:', err);
+                    downloadBase64(result.content, result.filename);
+                }
+            } else {
+                downloadBase64(result.content, result.filename);
+            }
+        }
         return result;
     };
     

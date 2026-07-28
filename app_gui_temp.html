@@ -1,4 +1,4 @@
-html_content = """
+
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1054,7 +1054,7 @@ html_content = """
             }
             
             // 解析来源信息 "文件名-P1"
-            const match = rowData.source.match(/^(.+)-P(\\d+)$/);
+            const match = rowData.source.match(/^(.+)-P(\d+)$/);
             if (!match) {
                 alert('来源格式错误');
                 return;
@@ -1096,7 +1096,7 @@ html_content = """
             }
             
             // 解析来源信息 "文件名-P1"
-            const match = sourceLabel.match(/^(.+)-P(\\d+)$/);
+            const match = sourceLabel.match(/^(.+)-P(\d+)$/);
             if (!match) {
                 alert('来源格式错误');
                 return;
@@ -1167,13 +1167,13 @@ html_content = """
         function copyReimbursementTable() {
             if (!currentTableData || currentTableData.length === 0) return;
             
-            let text = "序号\\t发票号\\t来源\\t人数\\t日期\\t起点\\t终点\\t票额\\n";
+            let text = "序号\t发票号\t来源\t人数\t日期\t起点\t终点\t票额\n";
             let total = 0.0;
             currentTableData.forEach(r => {
-                text += `${r.id}\\t${r.invoiceNo}\\t${r.source || ''}\\t${r.people}\\t${r.date}\\t${r.start}\\t${r.end}\\t${r.amount}\\n`;
+                text += `${r.id}\t${r.invoiceNo}\t${r.source || ''}\t${r.people}\t${r.date}\t${r.start}\t${r.end}\t${r.amount}\n`;
                 total += parseFloat(r.amount);
             });
-            text += `\\t\\t\\t\\t\\t\\t合计\\t${total.toFixed(2)}`;
+            text += `\t\t\t\t\t\t合计\t${total.toFixed(2)}`;
             
             if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text)
@@ -1320,7 +1320,7 @@ html_content = """
 
         function copyTrainTicketTable() {
             if (!currentTrainTicketData.length) return;
-            let text = '日期\\t发车时间\\t行程\\t车次\\t金额\\t退票费\\n';
+            let text = '日期\t发车时间\t行程\t车次\t金额\t退票费\n';
             let currentDate = '';
             let groupFareTotal = 0;
             let groupRefundFeeTotal = 0;
@@ -1328,7 +1328,7 @@ html_content = """
             let refundFeeTotal = 0;
             currentTrainTicketData.forEach(row => {
                 if (currentDate && row.date !== currentDate) {
-                    text += `${currentDate}\\t\\t小计\\t\\t${groupFareTotal.toFixed(2)}\\t${groupRefundFeeTotal.toFixed(2)}\\n`;
+                    text += `${currentDate}\t\t小计\t\t${groupFareTotal.toFixed(2)}\t${groupRefundFeeTotal.toFixed(2)}\n`;
                     groupFareTotal = 0;
                     groupRefundFeeTotal = 0;
                 }
@@ -1337,12 +1337,12 @@ html_content = """
                 groupRefundFeeTotal += Number(row.refundFee || 0);
                 fareTotal += Number(row.amount);
                 refundFeeTotal += Number(row.refundFee || 0);
-                text += `${row.date}\\t${row.time}\\t${row.route}\\t${row.trainNo || ''}\\t${Number(row.amount).toFixed(2)}\\t${Number(row.refundFee || 0).toFixed(2)}\\n`;
+                text += `${row.date}\t${row.time}\t${row.route}\t${row.trainNo || ''}\t${Number(row.amount).toFixed(2)}\t${Number(row.refundFee || 0).toFixed(2)}\n`;
             });
-            text += `${currentDate}\\t\\t小计\\t\\t${groupFareTotal.toFixed(2)}\\t${groupRefundFeeTotal.toFixed(2)}\\n`;
-            text += `\\t\\t票价合计（不含退票费）\\t\\t${fareTotal.toFixed(2)}\\t\\n`;
-            text += `\\t\\t退票费合计\\t\\t\\t${refundFeeTotal.toFixed(2)}\\n`;
-            text += `\\t\\t总计（含退票费）\\t\\t${(fareTotal + refundFeeTotal).toFixed(2)}\\t${refundFeeTotal.toFixed(2)}`;
+            text += `${currentDate}\t\t小计\t\t${groupFareTotal.toFixed(2)}\t${groupRefundFeeTotal.toFixed(2)}\n`;
+            text += `\t\t票价合计（不含退票费）\t\t${fareTotal.toFixed(2)}\t\n`;
+            text += `\t\t退票费合计\t\t\t${refundFeeTotal.toFixed(2)}\n`;
+            text += `\t\t总计（含退票费）\t\t${(fareTotal + refundFeeTotal).toFixed(2)}\t${refundFeeTotal.toFixed(2)}`;
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text)
                     .then(() => alert('表格已复制到剪贴板，可直接粘贴到 Excel'))
@@ -1658,13 +1658,13 @@ html_content = """
         function copyStatisticsTable() {
             if (!currentStatisticsData || currentStatisticsData.length === 0) return;
             
-            let text = "序号\\t发票号\\t来源页面\\t金额\\n";
+            let text = "序号\t发票号\t来源页面\t金额\n";
             let total = 0.0;
             currentStatisticsData.forEach((item, index) => {
-                text += `${index + 1}\\t${item.invoiceNo}\\t${item.pages.join(', ')}\\t${item.amount}\\n`;
+                text += `${index + 1}\t${item.invoiceNo}\t${item.pages.join(', ')}\t${item.amount}\n`;
                 total += parseFloat(item.amount);
             });
-            text += `\\t\\t合计（已去重）\\t${total.toFixed(2)}`;
+            text += `\t\t合计（已去重）\t${total.toFixed(2)}`;
             
             if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text)
@@ -1872,7 +1872,7 @@ html_content = """
                 }, 500); 
             }, 100); 
         }
-        function addHistory(p) { const n = p.replace(/\\\\/g, '/').split('/').pop(); const d = new Date(); historyFiles.unshift({ path: p, name: n, time: `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}` }); renderHistoryList(); loadReview(p); }
+        function addHistory(p) { const n = p.replace(/\\/g, '/').split('/').pop(); const d = new Date(); historyFiles.unshift({ path: p, name: n, time: `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}` }); renderHistoryList(); loadReview(p); }
         
         function renderHistoryList() { 
             const l = document.getElementById('historyList'); 
@@ -2235,4 +2235,3 @@ html_content = """
     </script>
 </body>
 </html>
-"""
