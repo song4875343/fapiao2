@@ -1,2 +1,18 @@
 /.claude
-/.venv
+
+# Python environments and caches
+/.venv/
+/baoxiao/.venv/
+**/__pycache__/
+*.py[cod]
+
+# Local secrets and dependencies
+/baoxiao/.env
+/baoxiao/node_modules/
+
+# baoxiao runtime input, temporary files, and generated output
+/baoxiao/tem/
+/baoxiao/tmp/
+/baoxiao/outputs/
+/baoxiao/发票/
+/baoxiao/本地发票结果/
