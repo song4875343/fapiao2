@@ -26,6 +26,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 only-include = ["pdfm_v3.py"]
-
-[tool.uv]
-dev-dependencies = []
