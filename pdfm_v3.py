@@ -72,6 +72,49 @@ class PDFMergerAPI:
                 except Exception as e:
                     print(f"解析文件失败 {file_path}: {e}")
         return result
+
+    def select_directory(self):
+        """Choose a local directory for the reimbursement workflow."""
+        if self.mode == 'server':
+            return {'success': False, 'error': '浏览器模式不能直接选择服务器目录'}
+        result = window.create_file_dialog(webview.FileDialog.FOLDER)
+        if not result:
+            return {'success': True, 'path': ''}
+        path = result[0] if isinstance(result, (list, tuple)) else result
+        return {'success': True, 'path': str(path)}
+
+    def process_reimbursement(self, options):
+        """Run download/local classification and return UI-ready summary data."""
+        try:
+            import reimbursement_service
+            return reimbursement_service.process(options or {})
+        except Exception as exc:
+            traceback.print_exc()
+            return {'success': False, 'error': str(exc)}
+
+    def get_reimbursement_print_files(self, file_paths):
+        """Return PDF page metadata so classified invoices can enter the print editor."""
+        try:
+            import fitz
+            result = []
+            for value in file_paths or []:
+                path = str(value)
+                if self.mode == 'server' and path in self.file_mapping:
+                    path = self.file_mapping[path]
+                if not os.path.isfile(path) or not path.lower().endswith('.pdf'):
+                    continue
+                document = fitz.open(path)
+                try:
+                    result.append({
+                        'path': path,
+                        'name': os.path.basename(path),
+                        'page_count': document.page_count,
+                    })
+                finally:
+                    document.close()
+            return {'success': True, 'files': result}
+        except Exception as exc:
+            return {'success': False, 'error': str(exc)}
     
     def upload_files(self, files_data):
         """
@@ -306,6 +349,43 @@ class PDFMergerAPI:
 
         output_doc.save(output_path)
         output_doc.close()
+
+    def merge_invoice_for_print(self, page_list):
+        """将发票按两张一页合并到内存，供前端直接打印。"""
+        import tempfile
+
+        if not page_list:
+            return {'success': False, 'error': '没有可打印的页面'}
+
+        temp_path = None
+        try:
+            resolved_pages = []
+            for item in page_list:
+                page = dict(item)
+                if self.mode == 'server' and page.get('path') in self.file_mapping:
+                    page['path'] = self.file_mapping[page['path']]
+                resolved_pages.append(page)
+
+            with tempfile.NamedTemporaryFile(prefix='invoice_print_', suffix='.pdf', delete=False) as temp_file:
+                temp_path = temp_file.name
+
+            self._merge_invoice_by_pages(resolved_pages, temp_path)
+            with open(temp_path, 'rb') as pdf_file:
+                encoded = base64.b64encode(pdf_file.read()).decode('utf-8')
+
+            return {
+                'success': True,
+                'data': f'data:application/pdf;base64,{encoded}',
+                'message': '打印文件已准备'
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError as e:
+                    print(f'删除打印临时文件失败: {e}')
 
     def _place_page_on_canvas(self, output_doc, target_page, page_info, a4_width, a4_height, is_top):
         import fitz

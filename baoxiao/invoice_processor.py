@@ -9,9 +9,12 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment, Font, PatternFill
 
-import itinerary
-import ordinary_invoice
-import train_ticket
+try:
+    from . import itinerary, ordinary_invoice, train_ticket
+except ImportError:  # Allow running this module directly from baoxiao/.
+    import itinerary
+    import ordinary_invoice
+    import train_ticket
 
 
 CATEGORIES = ("高铁票", "出租票", "住宿票", "其他发票")

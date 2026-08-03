@@ -69,7 +69,8 @@
     const autoMethods = [
         'get_file_info', 'get_page_image', 'get_page_size_categories', 'normalize_page_sizes', 'get_routes', 'save_routes',
         'generate_reimbursement_form', 'generate_train_ticket_form', 'calculate_invoice_amounts',
-        'print_pdf', 'clear_files'
+        'print_pdf', 'merge_invoice_for_print', 'clear_files', 'select_directory', 'process_reimbursement',
+        'get_reimbursement_print_files'
     ];
     
     // 自动生成所有方法的 HTTP 调用
@@ -87,6 +88,9 @@
                     'generate_reimbursement_form': ['file_paths', 'date_range'],
                     'generate_train_ticket_form': ['pages'],
                     'calculate_invoice_amounts': ['pages_info'],
+                    'process_reimbursement': ['options'],
+                    'get_reimbursement_print_files': ['file_paths'],
+                    'merge_invoice_for_print': ['page_list'],
                     'print_pdf': ['file_path']
                 };
                 

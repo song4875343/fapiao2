@@ -15,8 +15,12 @@ import zipfile
 from dotenv import load_dotenv
 import re
 
-from invoice_processor import categorize_pdfs, generate_excel
-from taxi_reimbursement import generate_taxi_reimbursement
+try:
+    from .invoice_processor import categorize_pdfs, generate_excel
+    from .taxi_reimbursement import generate_taxi_reimbursement
+except ImportError:  # Allow running this module directly from baoxiao/.
+    from invoice_processor import categorize_pdfs, generate_excel
+    from taxi_reimbursement import generate_taxi_reimbursement
 
 
 def load_config():

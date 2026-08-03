@@ -211,26 +211,141 @@ html_content = """
         .edit-notice li {
             margin: 3px 0;
         }
+
+        .invoice2-view { flex: 1; min-width: 0; overflow: hidden; background: #f4f6f7; display: none; }
+        .invoice2-shell { width: 100%; height: 100%; display: grid; grid-template-columns: 252px minmax(0, 1fr); }
+        .invoice2-sidebar { min-width: 0; overflow: hidden; background: white; border-right: 1px solid #d7dde1; padding: 15px 14px; }
+        .invoice2-main { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 14px 18px 10px; }
+        .invoice2-header { display: flex; flex-direction: column; gap: 10px; margin-bottom: 13px; }
+        .invoice2-header h1 { color: #243342; font-size: 19px; font-weight: 650; }
+        .invoice2-header p { color: #6b7780; margin-top: 3px; font-size: 12px; }
+        .invoice2-mode { width: 100%; display: inline-flex; border: 1px solid #cfd6dc; border-radius: 6px; overflow: hidden; background: white; flex-shrink: 0; }
+        .invoice2-mode button { flex: 1; border: 0; border-right: 1px solid #cfd6dc; background: white; color: #4d5a63; padding: 7px 9px; cursor: pointer; }
+        .invoice2-mode button:last-child { border-right: 0; }
+        .invoice2-mode button.active { background: #2c3e50; color: white; }
+        .invoice2-form { background: white; }
+        .invoice2-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 10px; }
+        .invoice2-field { grid-column: span 1; min-width: 0; }
+        .invoice2-field.wide { grid-column: 1 / -1; }
+        .invoice2-field label { display: block; color: #53606a; font-size: 11px; font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .invoice2-input-row { display: flex; min-width: 0; }
+        .invoice2-field input { width: 100%; min-width: 0; height: 32px; border: 1px solid #cfd6dc; padding: 0 8px; font-size: 12px; background: white; }
+        .invoice2-input-row input { border-radius: 4px 0 0 4px; }
+        .invoice2-input-row button { width: 52px; border: 1px solid #cfd6dc; border-left: 0; border-radius: 0 4px 4px 0; background: #f5f7f8; color: #34495e; cursor: pointer; }
+        .invoice2-field > input { border-radius: 4px; }
+        .invoice2-actions { border-top: 1px solid #edf0f2; margin-top: 11px; padding-top: 8px; }
+        .invoice2-actions span { display: block; min-height: 17px; line-height: 17px; }
+        .invoice2-actions button, .invoice2-result-actions button { border: 0; border-radius: 4px; padding: 9px 16px; cursor: pointer; font-size: 13px; }
+        .invoice2-primary { background: #21865b; color: white; }
+        .invoice2-secondary { background: #e8edf0; color: #34495e; }
+        .invoice2-results { display: none; height: 100%; min-height: 0; flex-direction: column; }
+        .invoice2-result-empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #879199; text-align: center; }
+        .invoice2-result-empty strong { color: #53616b; font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+        .invoice2-result-empty span { font-size: 12px; }
+        .invoice2-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid #dce1e5; border-radius: 6px; overflow: hidden; background: white; }
+        .invoice2-kpi { padding: 10px 14px; border-right: 1px solid #e5e9ec; min-width: 0; }
+        .invoice2-kpi:nth-child(3n) { border-right: 0; }
+        .invoice2-kpi:nth-child(n+4) { border-top: 1px solid #e5e9ec; }
+        .invoice2-kpi span { display: block; color: #74808a; font-size: 10px; margin-bottom: 4px; }
+        .invoice2-kpi strong { display: block; color: #263746; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .invoice2-kpi.total strong { color: #21865b; }
+        .invoice2-result-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 0 7px; flex-shrink: 0; }
+        .invoice2-result-head h2 { color: #2c3e50; font-size: 15px; }
+        .invoice2-result-actions { display: flex; gap: 8px; }
+        .invoice2-tabs { display: flex; gap: 2px; border-bottom: 1px solid #cfd6dc; flex-shrink: 0; }
+        .invoice2-tabs button { border: 0; background: transparent; color: #66737c; padding: 7px 13px; cursor: pointer; border-bottom: 2px solid transparent; }
+        .invoice2-tabs button.active { color: #1d6f4e; border-bottom-color: #21865b; font-weight: 600; }
+        .invoice2-table-wrap { flex: 1; min-height: 0; background: white; border: 1px solid #dce1e5; border-top: 0; overflow: auto; }
+        .invoice2-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .invoice2-table th { position: sticky; top: 0; z-index: 1; background: #eef2f4; color: #44515a; text-align: left; padding: 9px 10px; white-space: nowrap; }
+        .invoice2-table td { border-top: 1px solid #edf0f2; padding: 9px 10px; color: #4b5962; vertical-align: top; }
+        .invoice2-table td.amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .invoice2-table td.filename { max-width: 260px; word-break: break-all; }
+        .invoice2-empty { padding: 34px; text-align: center; color: #879199; }
+        .invoice2-files { color: #66737c; font-size: 11px; margin-top: 6px; min-height: 16px; flex-shrink: 0; word-break: break-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        @media (max-width: 820px) {
+            .invoice2-view { overflow-y: auto; }
+            .invoice2-shell { height: auto; display: block; }
+            .invoice2-sidebar { border-right: 0; border-bottom: 1px solid #d7dde1; }
+            .invoice2-main { min-height: 460px; overflow-y: auto; padding: 18px 16px 60px; }
+            .invoice2-grid { grid-template-columns: minmax(0, 1fr); }
+            .invoice2-field, .invoice2-field.wide { grid-column: 1; }
+            .invoice2-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .invoice2-kpi, .invoice2-kpi:nth-child(3n) { border-right: 1px solid #e5e9ec; }
+            .invoice2-kpi:nth-child(2n) { border-right: 0; }
+            .invoice2-kpi:nth-child(n+3) { border-top: 1px solid #e5e9ec; }
+            .invoice2-table-wrap { max-height: 430px; min-height: 260px; }
+        }
     </style>
 </head>
 <body>
     <div class="toolbar">
-        <button onclick="addFiles()">+ 添加PDF文件</button>
+        <button id="btnAddFiles" onclick="addFiles()">+ 添加PDF文件</button>
         <div class="separator"></div>
         <div class="mode-selector">
-            <label><input type="radio" name="mergeMode" value="normal" checked onchange="toggleConfigBtn()"> 普通</label>
-            <label><input type="radio" name="mergeMode" value="invoice" onchange="toggleConfigBtn()"> 发票</label>
+            <label><input type="radio" name="mergeMode" value="normal" checked onchange="switchAppMode()"> 普通</label>
+            <label><input type="radio" name="mergeMode" value="invoice" onchange="switchAppMode()"> 发票</label>
+            <label><input type="radio" name="mergeMode" value="invoice2" onchange="switchAppMode()"> 发票2</label>
             <button id="btnConfig" class="config-btn warning" onclick="openRouteConfig()">配置路线</button>
         </div>
         <div class="separator"></div>
-        <button onclick="clearAll()" class="danger">清空全部</button>
+        <button id="btnClearAll" onclick="clearAll()" class="danger">清空全部</button>
         <div style="flex:1"></div>
-        <button onclick="showHelp()" style="background-color: #95a5a6; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px;">帮助</button>
-        <button onclick="startMerge()" class="success">合并并保存</button>
+        <button id="btnHelp" onclick="showHelp()" style="background-color: #95a5a6; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px;">帮助</button>
+        <button id="btnDirectPrint" onclick="directPrintInvoices()" class="secondary" style="display:none;">打印</button>
+        <button id="btnStartMerge" onclick="startMerge()" class="success">合并并保存</button>
         <button onclick="switchToWorkspace()" id="btnBackEdit" style="display:none; margin-left: 10px;">&lt; 返回编辑</button>
     </div>
 
     <div class="main-content">
+        <div class="invoice2-view" id="invoice2View">
+            <div class="invoice2-shell">
+                <aside class="invoice2-sidebar">
+                    <div class="invoice2-header">
+                        <div><h1>发票全流程</h1><p>下载、清洗、分类与报销参数</p></div>
+                        <div class="invoice2-mode">
+                            <button id="invoice2LocalMode" class="active" onclick="setInvoice2Mode('local')">本地文件夹</button>
+                            <button id="invoice2EmailMode" onclick="setInvoice2Mode('email')">邮箱下载</button>
+                        </div>
+                    </div>
+                    <div class="invoice2-form">
+                        <div class="invoice2-grid">
+                            <div class="invoice2-field wide" id="invoice2SourceField">
+                                <label>发票源目录</label><div class="invoice2-input-row"><input id="invoice2SourceDir" placeholder="选择包含 PDF 的目录"><button onclick="browseInvoice2Dir('invoice2SourceDir')">浏览</button></div>
+                            </div>
+                            <div class="invoice2-field wide" id="invoice2RawField" style="display:none">
+                                <label>附件下载目录</label><div class="invoice2-input-row"><input id="invoice2RawDir" value="./tem"><button onclick="browseInvoice2Dir('invoice2RawDir')">浏览</button></div>
+                            </div>
+                            <div class="invoice2-field" id="invoice2StartField" style="display:none"><label>开始日期</label><input type="date" id="invoice2StartDate"></div>
+                            <div class="invoice2-field" id="invoice2EndField" style="display:none"><label>结束日期</label><input type="date" id="invoice2EndDate"></div>
+                            <div class="invoice2-field wide">
+                                <label>分类输出目录</label><div class="invoice2-input-row"><input id="invoice2OutputDir" placeholder="选择结果保存目录"><button onclick="browseInvoice2Dir('invoice2OutputDir')">浏览</button></div>
+                            </div>
+                            <div class="invoice2-field"><label>单位所在城市</label><input id="invoice2UnitCity" value="郑州"></div>
+                            <div class="invoice2-field"><label>家到高铁站最低费用</label><input type="number" id="invoice2HomeMin" value="20" min="0"></div>
+                            <div class="invoice2-field"><label>家到高铁站最高费用</label><input type="number" id="invoice2HomeMax" value="30" min="0"></div>
+                            <div class="invoice2-field"><label>高铁站到项目地最低费用</label><input type="number" id="invoice2ProjectMin" value="30" min="0"></div>
+                        </div>
+                        <div class="invoice2-actions"><span id="invoice2FormStatus" style="color:#71808a;font-size:12px;"></span></div>
+                    </div>
+                </aside>
+                <section class="invoice2-main">
+                    <div class="invoice2-result-empty" id="invoice2ResultEmpty">
+                        <strong>等待处理结果</strong><span>完成左侧参数后，统计和发票明细将在这里显示</span>
+                    </div>
+                    <div class="invoice2-results" id="invoice2Results">
+                        <div class="invoice2-kpis" id="invoice2Kpis"></div>
+                        <div class="invoice2-result-head">
+                            <h2>发票统计与明细</h2>
+                            <div class="invoice2-result-actions"><button class="invoice2-secondary" onclick="sendInvoice2ToPrint()">送入两张一页打印</button></div>
+                        </div>
+                        <div class="invoice2-tabs" id="invoice2Tabs"></div>
+                        <div class="invoice2-table-wrap"><table class="invoice2-table"><thead><tr><th>类别</th><th>日期</th><th>内容</th><th>金额</th><th>发票号</th><th>文件名</th></tr></thead><tbody id="invoice2TableBody"></tbody></table></div>
+                        <div class="invoice2-files" id="invoice2Files"></div>
+                    </div>
+                </section>
+            </div>
+        </div>
         <div class="left-sidebar">
             <div class="source-panel">
                 <div class="panel-header"><h3>源文件列表 (点击预览)</h3></div>
@@ -700,7 +815,182 @@ html_content = """
         // 记录当前预览的文件路径
         let currentReviewFilePath = null;
 
+        let invoice2Mode = 'local';
+        let invoice2Result = null;
+        let invoice2Category = '全部';
+
         function generateUUID() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }
+
+        function switchAppMode() {
+            const mode = document.querySelector('input[name="mergeMode"]:checked').value;
+            const invoice2 = mode === 'invoice2';
+            document.getElementById('invoice2View').style.display = invoice2 ? 'block' : 'none';
+            document.querySelector('.left-sidebar').style.display = invoice2 ? 'none' : 'flex';
+            document.querySelector('.right-area').style.display = invoice2 ? 'none' : 'flex';
+            document.getElementById('btnAddFiles').style.display = invoice2 ? 'none' : 'inline-block';
+            document.getElementById('btnClearAll').style.display = invoice2 ? 'none' : 'inline-block';
+            const primaryButton = document.getElementById('btnStartMerge');
+            primaryButton.style.display = 'inline-block';
+            primaryButton.textContent = invoice2 ? '开始处理' : '合并并保存';
+            document.getElementById('btnHelp').style.display = invoice2 ? 'none' : 'inline-block';
+            document.getElementById('btnDirectPrint').style.display = mode === 'invoice' ? 'inline-block' : 'none';
+            document.getElementById('btnBackEdit').style.display = 'none';
+            if (invoice2) {
+                document.getElementById('batchToolbar').classList.remove('visible');
+                document.getElementById('statusText').textContent = invoice2Result ? '发票2处理完成' : '发票2就绪';
+            } else {
+                switchToWorkspace();
+                document.getElementById('statusText').textContent = '就绪';
+            }
+            toggleConfigBtn();
+            updateBatchToolbar();
+        }
+
+        function setInvoice2Mode(mode) {
+            invoice2Mode = mode;
+            document.getElementById('invoice2LocalMode').classList.toggle('active', mode === 'local');
+            document.getElementById('invoice2EmailMode').classList.toggle('active', mode === 'email');
+            document.getElementById('invoice2SourceField').style.display = mode === 'local' ? 'block' : 'none';
+            document.getElementById('invoice2RawField').style.display = mode === 'email' ? 'block' : 'none';
+            document.getElementById('invoice2StartField').style.display = mode === 'email' ? 'block' : 'none';
+            document.getElementById('invoice2EndField').style.display = mode === 'email' ? 'block' : 'none';
+        }
+
+        async function browseInvoice2Dir(inputId) {
+            const result = await pywebview.api.select_directory();
+            if (result && result.success && result.path) document.getElementById(inputId).value = result.path;
+            else if (result && !result.success) alert(result.error);
+        }
+
+        function invoice2Options() {
+            return {
+                mode: invoice2Mode,
+                sourceDir: document.getElementById('invoice2SourceDir').value.trim(),
+                rawDir: document.getElementById('invoice2RawDir').value.trim(),
+                outputDir: document.getElementById('invoice2OutputDir').value.trim(),
+                startDate: document.getElementById('invoice2StartDate').value,
+                endDate: document.getElementById('invoice2EndDate').value,
+                unitCity: document.getElementById('invoice2UnitCity').value.trim() || '郑州',
+                homeMin: Number(document.getElementById('invoice2HomeMin').value || 0),
+                homeMax: Number(document.getElementById('invoice2HomeMax').value || 0),
+                projectMin: Number(document.getElementById('invoice2ProjectMin').value || 0)
+            };
+        }
+
+        async function runInvoice2() {
+            const options = invoice2Options();
+            if (!options.outputDir || (invoice2Mode === 'local' && !options.sourceDir)) {
+                alert('请选择发票源目录和分类输出目录'); return;
+            }
+            if (options.homeMin > options.homeMax) { alert('最低费用不能高于最高费用'); return; }
+            document.getElementById('invoice2FormStatus').textContent = '正在识别和整理发票';
+            showProgress(invoice2Mode === 'email' ? '正在下载并整理发票...' : '正在清洗并分类发票...', 35);
+            try {
+                const result = await pywebview.api.process_reimbursement(options);
+                if (!result.success) { alert('处理失败: ' + (result.error || '未知错误')); return; }
+                invoice2Result = result;
+                invoice2Category = '全部';
+                renderInvoice2Result();
+                document.getElementById('invoice2FormStatus').textContent = `完成，共 ${result.totalCount} 张有效发票`;
+                document.getElementById('statusText').textContent = '发票2处理完成';
+            } catch (error) {
+                alert('处理失败: ' + error);
+            } finally {
+                hideProgress();
+            }
+        }
+
+        function escapeInvoice2(value) {
+            const element = document.createElement('span');
+            element.textContent = value == null ? '' : String(value);
+            return element.innerHTML;
+        }
+
+        function renderInvoice2Result() {
+            if (!invoice2Result) return;
+            const r = invoice2Result;
+            const categories = ['高铁票', '出租票', '住宿票', '其他发票'];
+            const kpis = [
+                ['有效发票', `${r.totalCount} 张`, 'total'],
+                ['总金额', `￥${Number(r.totalAmount).toFixed(2)}`, 'total'],
+                ...categories.map(category => [category, `${r.counts[category] || 0} 张 / ￥${Number(r.amounts[category] || 0).toFixed(2)}`, ''])
+            ];
+            document.getElementById('invoice2Kpis').innerHTML = kpis.map(item =>
+                `<div class="invoice2-kpi ${item[2]}"><span>${item[0]}</span><strong title="${item[1]}">${item[1]}</strong></div>`
+            ).join('');
+            const tabs = ['全部', ...categories];
+            document.getElementById('invoice2Tabs').innerHTML = tabs.map(category =>
+                `<button class="${invoice2Category === category ? 'active' : ''}" onclick="setInvoice2Category('${category}')">${category}</button>`
+            ).join('');
+            renderInvoice2Table();
+            const names = (r.outputFiles || []).map(file => file.name).join('、');
+            document.getElementById('invoice2Files').textContent = `输出：${r.outputDir}${names ? '  |  ' + names : ''}`;
+            document.getElementById('invoice2ResultEmpty').style.display = 'none';
+            document.getElementById('invoice2Results').style.display = 'flex';
+        }
+
+        function setInvoice2Category(category) {
+            invoice2Category = category;
+            renderInvoice2Result();
+        }
+
+        function renderInvoice2Table() {
+            const rows = getCurrentInvoice2Rows();
+            const body = document.getElementById('invoice2TableBody');
+            if (!rows.length) {
+                body.innerHTML = '<tr><td colspan="6" class="invoice2-empty">当前分类没有发票</td></tr>';
+                return;
+            }
+            body.innerHTML = rows.map(row => `<tr>
+                <td>${escapeInvoice2(row.category)}</td><td>${escapeInvoice2(row.date)}</td>
+                <td>${escapeInvoice2(row.content)}</td><td class="amount">￥${Number(row.amount).toFixed(2)}</td>
+                <td>${escapeInvoice2(row.invoiceNo)}</td><td class="filename">${escapeInvoice2(row.filename)}</td>
+            </tr>`).join('');
+        }
+
+        function getCurrentInvoice2Rows() {
+            if (!invoice2Result) return [];
+            return (invoice2Result.rows || []).filter(
+                row => invoice2Category === '全部' || row.category === invoice2Category
+            );
+        }
+
+        async function sendInvoice2ToPrint() {
+            const filePaths = [];
+            const seenPaths = new Set();
+            getCurrentInvoice2Rows().forEach(row => {
+                if (row.path && !seenPaths.has(row.path)) {
+                    seenPaths.add(row.path);
+                    filePaths.push(row.path);
+                }
+            });
+            if (!filePaths.length) {
+                alert('没有可打印的分类发票'); return;
+            }
+            showProgress('正在载入打印工作台...', 35);
+            try {
+                const result = await pywebview.api.get_reimbursement_print_files(filePaths);
+                if (!result.success || !result.files.length) { alert(result.error || '没有可载入的发票'); return; }
+                clearAll();
+                sourceFiles = result.files;
+                const pages = [];
+                result.files.forEach(file => {
+                    for (let index = 0; index < file.page_count; index++) pages.push({
+                        id: generateUUID(), path: file.path, pageIndex: index, fileName: file.name, rotation: 0
+                    });
+                });
+                allPages = pages;
+                document.querySelector('input[name="mergeMode"][value="invoice"]').checked = true;
+                switchAppMode();
+                renderSourceList();
+                document.getElementById('emptyState').style.display = 'none';
+                renderPageGrid();
+                loadThumbnails(pages);
+                updateStats();
+            } finally {
+                hideProgress();
+            }
+        }
 
         function toggleConfigBtn() {
             const mode = document.querySelector('input[name="mergeMode"]:checked').value;
@@ -1834,6 +2124,9 @@ html_content = """
         }
         
         async function startMerge() { 
+            if (document.querySelector('input[name="mergeMode"]:checked').value === 'invoice2') {
+                return runInvoice2();
+            }
             // 确定要合并的页面
             let pagesToMerge = [];
             if (selectedPageIds.size > 0) {
@@ -1871,6 +2164,90 @@ html_content = """
                     } else alert('合并错误: ' + r.error); 
                 }, 500); 
             }, 100); 
+        }
+
+        function printPdfData(pdfData, button, originalText) {
+            const blobUrl = URL.createObjectURL(base64ToBlob(pdfData));
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'fixed';
+            iframe.style.right = '0';
+            iframe.style.bottom = '0';
+            iframe.style.width = '1px';
+            iframe.style.height = '1px';
+            iframe.style.border = 'none';
+            iframe.style.opacity = '0.01';
+            iframe.style.pointerEvents = 'none';
+
+            const cleanup = () => {
+                if (document.body.contains(iframe)) document.body.removeChild(iframe);
+                URL.revokeObjectURL(blobUrl);
+            };
+
+            iframe.onload = () => {
+                setTimeout(() => {
+                    try {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    } catch (error) {
+                        console.error('打印调用失败:', error);
+                        if (confirm('自动打印被拦截。是否在新窗口打开PDF进行打印？')) {
+                            window.open(blobUrl, '_blank');
+                        }
+                    } finally {
+                        if (button) {
+                            button.disabled = false;
+                            button.innerText = originalText;
+                        }
+                        // 给系统打印预览保留读取 Blob 的时间。
+                        setTimeout(cleanup, 60000);
+                    }
+                }, 500);
+            };
+            iframe.onerror = () => {
+                cleanup();
+                if (button) {
+                    button.disabled = false;
+                    button.innerText = originalText;
+                }
+                alert('PDF文件加载失败，无法打印');
+            };
+            iframe.src = blobUrl;
+            document.body.appendChild(iframe);
+        }
+
+        async function directPrintInvoices() {
+            const button = document.getElementById('btnDirectPrint');
+            const originalText = button.innerText;
+            const pagesToPrint = selectedPageIds.size > 0
+                ? allPages.filter(page => selectedPageIds.has(page.id))
+                : allPages.slice();
+
+            if (pagesToPrint.length === 0) {
+                alert('请先添加文件或选择要打印的页面');
+                return;
+            }
+
+            button.disabled = true;
+            button.innerText = '处理中...';
+            showProgress('正在合并并准备打印...', 50);
+            try {
+                const pages = pagesToPrint.map(page => ({
+                    path: page.path,
+                    page_index: page.pageIndex,
+                    rotation: page.rotation
+                }));
+                const result = await pywebview.api.merge_invoice_for_print(pages);
+                if (!result.success) throw new Error(result.error || '生成打印文件失败');
+
+                document.getElementById('progressFill').style.width = '100%';
+                hideProgress();
+                printPdfData(result.data, button, originalText);
+            } catch (error) {
+                hideProgress();
+                button.disabled = false;
+                button.innerText = originalText;
+                alert('打印失败: ' + error.message);
+            }
         }
         function addHistory(p) { const n = p.replace(/\\\\/g, '/').split('/').pop(); const d = new Date(); historyFiles.unshift({ path: p, name: n, time: `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}` }); renderHistoryList(); loadReview(p); }
         
@@ -2232,6 +2609,13 @@ html_content = """
         function updateStats() { document.getElementById('totalStats').textContent = `总页数：${allPages.length}`; }
         function showProgress(t, p) { document.getElementById('progressOverlay').style.display = 'flex'; document.getElementById('progressText').textContent = t; document.getElementById('progressFill').style.width = p + '%'; }
         function hideProgress() { document.getElementById('progressOverlay').style.display = 'none'; document.getElementById('progressFill').style.width = '0%'; }
+        const invoice2Today = new Date();
+        const invoice2MonthStart = new Date(invoice2Today.getFullYear(), invoice2Today.getMonth(), 1);
+        function invoice2DateValue(date) {
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        }
+        document.getElementById('invoice2StartDate').value = invoice2DateValue(invoice2MonthStart);
+        document.getElementById('invoice2EndDate').value = invoice2DateValue(invoice2Today);
     </script>
 </body>
 </html>
