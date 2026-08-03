@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 import invoice_processor
 import ordinary_invoice
 import taxi_reimbursement
+import taxi_planner
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +16,38 @@ EXAMPLES = ROOT / "exm"
 
 
 class InvoiceProcessingTests(unittest.TestCase):
+    def test_planner_consumes_every_taxi_with_unrestricted_extra_legs(self):
+        trains = [{"date": "2026-07-14", "route": "郑州东 - 上海虹桥"}]
+        amounts = (25, 45, 8, 12, 90)
+        taxis = [
+            {"filename": f"taxi-{index}.pdf", "invoice_date": "2026-07-01",
+             "amount": str(amount), "trips": []}
+            for index, amount in enumerate(amounts)
+        ]
+        planned = taxi_planner.plan_taxis(taxis, trains, "郑州")
+        self.assertEqual(len(planned), len(taxis))
+        self.assertEqual(sum(row["amount"] for row in planned), sum(amounts))
+        self.assertFalse(any(row["status"] == "未处理" for row in planned))
+        extras = [row for row in planned if row["direction"] == "extra"]
+        self.assertTrue(all(row["origin"] == "项目地点1" for row in extras))
+        self.assertTrue(all(row["destination"] == "项目地点2" for row in extras))
+
+    def test_planner_ignores_refunds_and_deduplicates_same_day_direction(self):
+        trains = [
+            {"date": "2026-05-20", "route": "北京西 - 郑州东", "is_refund": True},
+            {"date": "2026-05-20", "route": "北京西 - 郑州东", "is_refund": False},
+            {"date": "2026-05-20", "route": "北京西 - 郑州东", "is_refund": False},
+        ]
+        taxis = [
+            {"filename": f"taxi-{index}.pdf", "invoice_date": "2026-05-01",
+             "amount": str(amount), "trips": []}
+            for index, amount in enumerate((65, 24, 61, 23))
+        ]
+        planned = taxi_planner.plan_taxis(taxis, trains, "郑州")
+        self.assertEqual(sum(row["phase"] == 4 for row in planned), 1)
+        self.assertEqual(sum(row["phase"] == 5 for row in planned), 1)
+        self.assertEqual(sum(row["direction"] == "extra" for row in planned), 2)
+
     def test_amount_accepts_currency_symbol_after_value(self):
         text = """价税合计（大写）\n（小写）\n79.99\n¥\n2.33\n¥\n77.66\n¥"""
         self.assertEqual(ordinary_invoice.extract_amount(text), "79.99")

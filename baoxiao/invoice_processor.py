@@ -56,6 +56,7 @@ def parse_pdf(pdf_path):
             date=ticket["date"], time=ticket["time"], route=ticket["route"],
             amount=ticket["refundFee"] if float(ticket["refundFee"]) else ticket["amount"],
             invoice_no=ticket["invoiceNo"], kind="铁路电子客票",
+            is_refund=ticket.get("isRefund", False), train_no=ticket.get("trainNo", ""),
         )
         return row
     if category == "行程单":

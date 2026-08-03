@@ -117,6 +117,7 @@ def extract_ticket(pdf_path, page_index=0, source=None):
             "route": f"{start} - {end}",
             "amount": f"{amount:.2f}",
             "refundFee": f"{refund_fee:.2f}",
+            "isRefund": is_refund,
             "trainNo": train_match.group(1).upper() if train_match else "",
             "invoiceNo": invoice_match.group(1) if invoice_match else "未识别",
             "source": source or f"{os.path.basename(pdf_path)}-P{page_index + 1}",

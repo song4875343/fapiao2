@@ -92,6 +92,7 @@ def _expense_rows(taxis):
                     "date": trip["date"], "start": trip["start"], "end": trip["end"],
                     "time": trip.get("time", ""), "amount": float(trip["amount"]),
                     "ticket_count": 1 if index == 0 else "", "split_source": split_source,
+                    "purpose": trip.get("note") or trip.get("status") or "",
                     "split_color": split_color,
                 })
         else:
@@ -101,6 +102,7 @@ def _expense_rows(taxis):
                 "time": taxi.get("time", ""),
                 "amount": float(taxi["amount"]) if taxi.get("amount") else "", "ticket_count": 1,
                 "split_source": "", "split_color": "",
+                "purpose": taxi.get("note") or taxi.get("status") or "",
             })
     rows.sort(key=lambda item: (
         not bool(item["date"]), item["date"], item["time"], item["start"], item["end"]
@@ -156,7 +158,7 @@ def _fill_sheet(sheet, rows, invoice_dates):
         row_number = DATA_START_ROW + offset
         values = (
             offset + 1, 1, item["date"], item["start"], item["end"], item["amount"],
-            item["ticket_count"], item["split_source"], "",
+            item["ticket_count"], item["split_source"], item.get("purpose", ""),
         )
         for column, value in enumerate(values, 1):
             cell = sheet.cell(row_number, column, value)
