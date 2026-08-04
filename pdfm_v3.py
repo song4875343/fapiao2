@@ -4,8 +4,12 @@ import base64
 import uuid
 import time
 from io import BytesIO
-import PyPDF2
-from PyPDF2 import PdfWriter, PdfReader
+try:
+    import PyPDF2
+    from PyPDF2 import PdfWriter, PdfReader
+except ImportError:
+    import pypdf as PyPDF2
+    from pypdf import PdfWriter, PdfReader
 try:
     import webview
 except ImportError:
@@ -114,6 +118,33 @@ class PDFMergerAPI:
                     document.close()
             return {'success': True, 'files': result}
         except Exception as exc:
+            return {'success': False, 'error': str(exc)}
+
+    def get_reimbursement_workbook(self, file_path):
+        """Return the editable grid for the generated double-page taxi form."""
+        try:
+            import reimbursement_workbook
+            return reimbursement_workbook.workbook_payload(file_path)
+        except Exception as exc:
+            traceback.print_exc()
+            return {'success': False, 'error': str(exc)}
+
+    def save_reimbursement_workbook(self, file_path, edits):
+        """Persist edited taxi-form cells while preserving the source workbook layout."""
+        try:
+            import reimbursement_workbook
+            return reimbursement_workbook.save_edits(file_path, edits or [])
+        except Exception as exc:
+            traceback.print_exc()
+            return {'success': False, 'error': str(exc)}
+
+    def prepare_reimbursement_print(self, file_path, edits=None):
+        """Render each taxi-form worksheet to one temporary PDF page."""
+        try:
+            import reimbursement_workbook
+            return reimbursement_workbook.render_pdf(file_path, edits or [])
+        except Exception as exc:
+            traceback.print_exc()
             return {'success': False, 'error': str(exc)}
     
     def upload_files(self, files_data):
@@ -256,29 +287,7 @@ class PDFMergerAPI:
             success_msg = '合并成功'
             
             if mode == 'normal':
-                writer = PdfWriter()
-                open_files = {} 
-                try:
-                    for item in page_list:
-                        path = str(item['path'])
-                        page_idx = int(item['page_index'])
-                        rotation = int(item.get('rotation', 0))
-                        
-                        if path not in open_files:
-                            if not os.path.exists(path): continue
-                            open_files[path] = PdfReader(path)
-                        
-                        reader = open_files[path]
-                        if 0 <= page_idx < len(reader.pages):
-                            page = reader.pages[page_idx]
-                            if rotation != 0:
-                                page.rotate(rotation)
-                            writer.add_page(page)
-
-                    with open(output_path, 'wb') as f:
-                        writer.write(f)
-                except Exception as e:
-                    raise e
+                self._merge_normal_by_pages(page_list, output_path)
             
             elif mode == 'invoice':
                 self._merge_invoice_by_pages(page_list, output_path)
@@ -334,24 +343,83 @@ class PDFMergerAPI:
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
+    def _merge_normal_by_pages(self, page_list, output_path):
+        """按传入顺序保留原页面尺寸合并 PDF。"""
+        writer = PdfWriter()
+        open_files = {}
+        for item in page_list:
+            path = str(item['path'])
+            page_idx = int(item['page_index'])
+            rotation = int(item.get('rotation', 0))
+
+            if path not in open_files:
+                if not os.path.exists(path):
+                    continue
+                open_files[path] = PdfReader(path)
+
+            reader = open_files[path]
+            if 0 <= page_idx < len(reader.pages):
+                page = reader.pages[page_idx]
+                if rotation != 0:
+                    page.rotate(rotation)
+                writer.add_page(page)
+
+        if not writer.pages:
+            raise ValueError('没有可打印的页面')
+        with open(output_path, 'wb') as output_file:
+            writer.write(output_file)
+
     def _merge_invoice_by_pages(self, page_list, output_path):
         """发票合并逻辑"""
         import fitz
         output_doc = fitz.open()
         a4_width, a4_height = fitz.paper_size("a4")
-        
-        for i in range(0, len(page_list), 2):
+
+        half_pages = []
+
+        def flush_half_pages():
+            if not half_pages:
+                return
             new_page = output_doc.new_page(width=a4_width, height=a4_height)
-            if i < len(page_list):
-                self._place_page_on_canvas(output_doc, new_page, page_list[i], a4_width, a4_height, True)
-            if i + 1 < len(page_list):
-                self._place_page_on_canvas(output_doc, new_page, page_list[i+1], a4_width, a4_height, False)
+            self._place_page_on_canvas(output_doc, new_page, half_pages[0], a4_width, a4_height, True)
+            if len(half_pages) > 1:
+                self._place_page_on_canvas(output_doc, new_page, half_pages[1], a4_width, a4_height, False)
+            half_pages.clear()
+
+        for page_info in page_list:
+            if page_info.get('full_page'):
+                flush_half_pages()
+                new_page = output_doc.new_page(width=a4_width, height=a4_height)
+                self._place_full_page_on_canvas(new_page, page_info, a4_width, a4_height)
+            else:
+                half_pages.append(page_info)
+                if len(half_pages) == 2:
+                    flush_half_pages()
+        flush_half_pages()
 
         output_doc.save(output_path)
         output_doc.close()
 
-    def merge_invoice_for_print(self, page_list):
-        """将发票按两张一页合并到内存，供前端直接打印。"""
+    def _place_full_page_on_canvas(self, target_page, page_info, a4_width, a4_height):
+        """Place a precomposed A4 form as one complete print page."""
+        import fitz
+        path = str(page_info['path'])
+        page_idx = int(page_info['page_index'])
+        rotation = int(page_info.get('rotation', 0))
+        if not os.path.exists(path):
+            return
+        try:
+            source = fitz.open(path)
+            target_page.show_pdf_page(
+                fitz.Rect(0, 0, a4_width, a4_height), source, page_idx,
+                rotate=rotation, keep_proportion=True,
+            )
+            source.close()
+        except Exception as e:
+            print(f"处理整页报销单出错: {e}")
+
+    def _merge_for_print(self, page_list, invoice_layout=False):
+        """将指定页面合并到内存，供前端直接打印。"""
         import tempfile
 
         if not page_list:
@@ -366,10 +434,14 @@ class PDFMergerAPI:
                     page['path'] = self.file_mapping[page['path']]
                 resolved_pages.append(page)
 
-            with tempfile.NamedTemporaryFile(prefix='invoice_print_', suffix='.pdf', delete=False) as temp_file:
+            prefix = 'invoice_print_' if invoice_layout else 'page_print_'
+            with tempfile.NamedTemporaryFile(prefix=prefix, suffix='.pdf', delete=False) as temp_file:
                 temp_path = temp_file.name
 
-            self._merge_invoice_by_pages(resolved_pages, temp_path)
+            if invoice_layout:
+                self._merge_invoice_by_pages(resolved_pages, temp_path)
+            else:
+                self._merge_normal_by_pages(resolved_pages, temp_path)
             with open(temp_path, 'rb') as pdf_file:
                 encoded = base64.b64encode(pdf_file.read()).decode('utf-8')
 
@@ -386,6 +458,14 @@ class PDFMergerAPI:
                     os.remove(temp_path)
                 except OSError as e:
                     print(f'删除打印临时文件失败: {e}')
+
+    def merge_pages_for_print(self, page_list):
+        """按原页面尺寸逐页合并，供普通连续打印。"""
+        return self._merge_for_print(page_list, invoice_layout=False)
+
+    def merge_invoice_for_print(self, page_list):
+        """将发票按两张一页合并到内存，供前端直接打印。"""
+        return self._merge_for_print(page_list, invoice_layout=True)
 
     def _place_page_on_canvas(self, output_doc, target_page, page_info, a4_width, a4_height, is_top):
         import fitz

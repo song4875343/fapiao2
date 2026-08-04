@@ -251,7 +251,9 @@ html_content = """
         .invoice2-kpi.total strong { color: #21865b; }
         .invoice2-result-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 0 7px; flex-shrink: 0; }
         .invoice2-result-head h2 { color: #2c3e50; font-size: 15px; }
-        .invoice2-result-actions { display: flex; gap: 8px; }
+        .invoice2-result-actions { display: flex; gap: 10px; align-items: center; }
+        .invoice2-direct-option { display: inline-flex; align-items: center; gap: 5px; color: #53616b; font-size: 12px; cursor: pointer; white-space: nowrap; }
+        .invoice2-direct-option input { accent-color: #21865b; }
         .invoice2-tabs { display: flex; gap: 2px; border-bottom: 1px solid #cfd6dc; flex-shrink: 0; }
         .invoice2-tabs button { border: 0; background: transparent; color: #66737c; padding: 7px 13px; cursor: pointer; border-bottom: 2px solid transparent; }
         .invoice2-tabs button.active { color: #1d6f4e; border-bottom-color: #21865b; font-weight: 600; }
@@ -262,6 +264,18 @@ html_content = """
         .invoice2-table td.amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .invoice2-table td.filename { max-width: 260px; word-break: break-all; }
         .invoice2-empty { padding: 34px; text-align: center; color: #879199; }
+        .invoice2-workbook-wrap { flex: 1; min-height: 0; background: #f6f7f8; border: 1px solid #dce1e5; border-top: 0; overflow: auto; display: none; }
+        .invoice2-workbook-toolbar { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; background: #eef2f4; border-bottom: 1px solid #d6dde2; }
+        .invoice2-sheet-tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; }
+        .invoice2-sheet-tabs button { border: 1px solid #cbd3d9; background: white; color: #53616b; padding: 5px 10px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
+        .invoice2-sheet-tabs button.active { border-color: #21865b; background: #e7f3ed; color: #176943; }
+        .invoice2-save-workbook { border: 0; border-radius: 3px; background: #21865b; color: white; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+        .invoice2-workbook-sheet { padding: 12px; min-width: 900px; }
+        .invoice2-workbook-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .invoice2-workbook-table td { border: 1px solid #62686c; padding: 0; overflow: hidden; }
+        .invoice2-workbook-table td.no-border { border-color: transparent; }
+        .invoice2-workbook-table input { width: 100%; height: 100%; min-height: 24px; border: 0; outline: 0; padding: 3px 5px; background: transparent; color: #20282e; font: inherit; text-align: inherit; letter-spacing: 0; }
+        .invoice2-workbook-table input:focus { box-shadow: inset 0 0 0 2px #21865b; background: #f3fbf7; }
         .invoice2-files { color: #66737c; font-size: 11px; margin-top: 6px; min-height: 16px; flex-shrink: 0; word-break: break-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         @media (max-width: 820px) {
             .invoice2-view { overflow-y: auto; }
@@ -292,7 +306,7 @@ html_content = """
         <button id="btnClearAll" onclick="clearAll()" class="danger">清空全部</button>
         <div style="flex:1"></div>
         <button id="btnHelp" onclick="showHelp()" style="background-color: #95a5a6; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px;">帮助</button>
-        <button id="btnDirectPrint" onclick="directPrintInvoices()" class="secondary" style="display:none;">打印</button>
+        <button id="btnDirectPrint" onclick="directPrintPages()" class="secondary">打印</button>
         <button id="btnStartMerge" onclick="startMerge()" class="success">合并并保存</button>
         <button onclick="switchToWorkspace()" id="btnBackEdit" style="display:none; margin-left: 10px;">&lt; 返回编辑</button>
     </div>
@@ -337,10 +351,17 @@ html_content = """
                         <div class="invoice2-kpis" id="invoice2Kpis"></div>
                         <div class="invoice2-result-head">
                             <h2>发票统计与明细</h2>
-                            <div class="invoice2-result-actions"><button class="invoice2-secondary" onclick="sendInvoice2ToPrint()">送入两张一页打印</button></div>
+                            <div class="invoice2-result-actions">
+                                <label class="invoice2-direct-option"><input type="checkbox" id="invoice2DirectPrint" checked>直接打印</label>
+                                <button class="invoice2-secondary" onclick="sendInvoice2ToPrint()">计入两张一页打印</button>
+                            </div>
                         </div>
                         <div class="invoice2-tabs" id="invoice2Tabs"></div>
-                        <div class="invoice2-table-wrap"><table class="invoice2-table"><thead><tr><th>类别</th><th>日期</th><th>内容</th><th>金额</th><th>发票号</th><th>文件名</th></tr></thead><tbody id="invoice2TableBody"></tbody></table></div>
+                        <div class="invoice2-table-wrap" id="invoice2InvoiceTableWrap"><table class="invoice2-table"><thead><tr><th>类别</th><th>日期</th><th>内容</th><th>金额</th><th>发票号</th><th>文件名</th></tr></thead><tbody id="invoice2TableBody"></tbody></table></div>
+                        <div class="invoice2-workbook-wrap" id="invoice2WorkbookWrap">
+                            <div class="invoice2-workbook-toolbar"><div class="invoice2-sheet-tabs" id="invoice2SheetTabs"></div><button class="invoice2-save-workbook" onclick="saveInvoice2Workbook()">保存修改</button></div>
+                            <div class="invoice2-workbook-sheet" id="invoice2WorkbookSheet"></div>
+                        </div>
                         <div class="invoice2-files" id="invoice2Files"></div>
                     </div>
                 </section>
@@ -375,7 +396,7 @@ html_content = """
 
             <div class="review-view" id="reviewView">
                 <div class="review-toolbar">
-                    <span>检查文件 (Ctrl+滚轮缩放)</span>
+                    <span id="reviewTitle">检查文件 (Ctrl+滚轮缩放)</span>
                     <button onclick="reviewZoomOut()">-</button>
                     <span id="reviewZoomLevel">100%</span>
                     <button onclick="reviewZoomIn()">+</button>
@@ -584,6 +605,7 @@ html_content = """
         <button class="batch-btn" onclick="selectAllPages()">全选</button>
         <button class="batch-btn" onclick="invertSelection()">反选</button>
         <div style="width:1px; height:15px; background:rgba(255,255,255,0.3)"></div>
+        <button class="batch-btn" id="btnPreviewSelected" onclick="previewSelectedPages()">预览</button>
         <button class="batch-btn" onclick="batchRotate(-90)">↺ 左旋</button>
         <button class="batch-btn" onclick="batchRotate(90)">↻ 右旋</button>
         <div style="width:1px; height:15px; background:rgba(255,255,255,0.3)"></div>
@@ -814,10 +836,14 @@ html_content = """
         
         // 记录当前预览的文件路径
         let currentReviewFilePath = null;
+        let currentReviewPages = [];
 
         let invoice2Mode = 'local';
         let invoice2Result = null;
         let invoice2Category = '全部';
+        let invoice2Workbook = null;
+        let invoice2WorkbookSheet = 0;
+        const invoice2WorkbookEdits = new Map();
 
         function generateUUID() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }
 
@@ -833,7 +859,9 @@ html_content = """
             primaryButton.style.display = 'inline-block';
             primaryButton.textContent = invoice2 ? '开始处理' : '合并并保存';
             document.getElementById('btnHelp').style.display = invoice2 ? 'none' : 'inline-block';
-            document.getElementById('btnDirectPrint').style.display = mode === 'invoice' ? 'inline-block' : 'none';
+            const printButton = document.getElementById('btnDirectPrint');
+            printButton.style.display = invoice2 ? 'none' : 'inline-block';
+            printButton.textContent = mode === 'invoice' ? '双页打印' : '打印';
             document.getElementById('btnBackEdit').style.display = 'none';
             if (invoice2) {
                 document.getElementById('batchToolbar').classList.remove('visible');
@@ -890,6 +918,9 @@ html_content = """
                 if (!result.success) { alert('处理失败: ' + (result.error || '未知错误')); return; }
                 invoice2Result = result;
                 invoice2Category = '全部';
+                invoice2Workbook = null;
+                invoice2WorkbookSheet = 0;
+                invoice2WorkbookEdits.clear();
                 renderInvoice2Result();
                 document.getElementById('invoice2FormStatus').textContent = `完成，共 ${result.totalCount} 张有效发票`;
                 document.getElementById('statusText').textContent = '发票2处理完成';
@@ -918,7 +949,7 @@ html_content = """
             document.getElementById('invoice2Kpis').innerHTML = kpis.map(item =>
                 `<div class="invoice2-kpi ${item[2]}"><span>${item[0]}</span><strong title="${item[1]}">${item[1]}</strong></div>`
             ).join('');
-            const tabs = ['全部', ...categories];
+            const tabs = ['全部', ...categories, '出租车报销单'];
             document.getElementById('invoice2Tabs').innerHTML = tabs.map(category =>
                 `<button class="${invoice2Category === category ? 'active' : ''}" onclick="setInvoice2Category('${category}')">${category}</button>`
             ).join('');
@@ -929,12 +960,22 @@ html_content = """
             document.getElementById('invoice2Results').style.display = 'flex';
         }
 
-        function setInvoice2Category(category) {
+        async function setInvoice2Category(category) {
             invoice2Category = category;
             renderInvoice2Result();
+            if (category === '出租车报销单' && !invoice2Workbook) await loadInvoice2Workbook();
         }
 
         function renderInvoice2Table() {
+            const invoiceWrap = document.getElementById('invoice2InvoiceTableWrap');
+            const workbookWrap = document.getElementById('invoice2WorkbookWrap');
+            const isWorkbook = invoice2Category === '出租车报销单';
+            invoiceWrap.style.display = isWorkbook ? 'none' : 'block';
+            workbookWrap.style.display = isWorkbook ? 'block' : 'none';
+            if (isWorkbook) {
+                renderInvoice2Workbook();
+                return;
+            }
             const rows = getCurrentInvoice2Rows();
             const body = document.getElementById('invoice2TableBody');
             if (!rows.length) {
@@ -955,41 +996,155 @@ html_content = """
             );
         }
 
-        async function sendInvoice2ToPrint() {
-            const filePaths = [];
-            const seenPaths = new Set();
-            getCurrentInvoice2Rows().forEach(row => {
-                if (row.path && !seenPaths.has(row.path)) {
-                    seenPaths.add(row.path);
-                    filePaths.push(row.path);
-                }
-            });
-            if (!filePaths.length) {
-                alert('没有可打印的分类发票'); return;
+        function getInvoice2WorkbookFile() {
+            return (invoice2Result && invoice2Result.outputFiles || []).find(
+                file => file.name === '出租车报销单双页.xlsx'
+            );
+        }
+
+        async function loadInvoice2Workbook() {
+            const file = getInvoice2WorkbookFile();
+            if (!file) {
+                document.getElementById('invoice2WorkbookSheet').innerHTML = '<div class="invoice2-empty">当前结果没有出租车报销单</div>';
+                return;
             }
-            showProgress('正在载入打印工作台...', 35);
+            showProgress('正在载入出租车报销单...', 40);
             try {
-                const result = await pywebview.api.get_reimbursement_print_files(filePaths);
-                if (!result.success || !result.files.length) { alert(result.error || '没有可载入的发票'); return; }
-                clearAll();
-                sourceFiles = result.files;
-                const pages = [];
-                result.files.forEach(file => {
-                    for (let index = 0; index < file.page_count; index++) pages.push({
-                        id: generateUUID(), path: file.path, pageIndex: index, fileName: file.name, rotation: 0
-                    });
-                });
-                allPages = pages;
-                document.querySelector('input[name="mergeMode"][value="invoice"]').checked = true;
-                switchAppMode();
-                renderSourceList();
-                document.getElementById('emptyState').style.display = 'none';
-                renderPageGrid();
-                loadThumbnails(pages);
-                updateStats();
+                const result = await pywebview.api.get_reimbursement_workbook(file.path);
+                if (!result.success) throw new Error(result.error || '载入报销单失败');
+                invoice2Workbook = result;
+                invoice2WorkbookSheet = 0;
+                invoice2WorkbookEdits.clear();
+                renderInvoice2Workbook();
+            } catch (error) {
+                alert('载入报销单失败: ' + error.message);
             } finally {
                 hideProgress();
             }
+        }
+
+        function workbookEditKey(sheet, cell) { return `${sheet}\u0000${cell}`; }
+
+        function renderInvoice2Workbook() {
+            const tabs = document.getElementById('invoice2SheetTabs');
+            const target = document.getElementById('invoice2WorkbookSheet');
+            if (!invoice2Workbook || !invoice2Workbook.sheets || !invoice2Workbook.sheets.length) {
+                tabs.innerHTML = '';
+                target.innerHTML = '<div class="invoice2-empty">正在载入报销单...</div>';
+                return;
+            }
+            tabs.innerHTML = invoice2Workbook.sheets.map((sheet, index) =>
+                `<button class="${index === invoice2WorkbookSheet ? 'active' : ''}" onclick="showInvoice2WorkbookSheet(${index})">${escapeInvoice2(sheet.name)}</button>`
+            ).join('');
+            const sheet = invoice2Workbook.sheets[invoice2WorkbookSheet];
+            const columns = sheet.columnWidths.map(width => `<col style="width:${Math.max(5, width)}%">`).join('');
+            const rows = sheet.rows.map(row => {
+                const cells = row.cells.map(cell => {
+                    const key = workbookEditKey(sheet.name, cell.cell);
+                    const value = invoice2WorkbookEdits.has(key) ? invoice2WorkbookEdits.get(key) : cell.value;
+                    const fontSize = Math.max(10, Math.min(20, Number(cell.fontSize || 10)));
+                    const style = `font-size:${fontSize}px;font-weight:${cell.bold ? '700' : '400'};text-align:${cell.align || 'left'}`;
+                    return `<td rowspan="${cell.rowspan}" colspan="${cell.colspan}" style="${style}"><input data-sheet="${escapeInvoice2(sheet.name)}" data-cell="${cell.cell}" value="${escapeInvoice2Attribute(value)}"></td>`;
+                }).join('');
+                return `<tr style="height:${Math.max(22, Number(row.height || 15) * 1.35)}px">${cells}</tr>`;
+            }).join('');
+            target.innerHTML = `<table class="invoice2-workbook-table"><colgroup>${columns}</colgroup><tbody>${rows}</tbody></table>`;
+            target.querySelectorAll('input[data-cell]').forEach(input => input.addEventListener('input', event => {
+                const element = event.currentTarget;
+                invoice2WorkbookEdits.set(workbookEditKey(element.dataset.sheet, element.dataset.cell), element.value);
+            }));
+        }
+
+        function escapeInvoice2Attribute(value) {
+            return escapeInvoice2(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function showInvoice2WorkbookSheet(index) {
+            invoice2WorkbookSheet = index;
+            renderInvoice2Workbook();
+        }
+
+        function getInvoice2WorkbookEdits() {
+            return Array.from(invoice2WorkbookEdits.entries()).map(([key, value]) => {
+                const [sheet, cell] = key.split('\u0000');
+                return { sheet, cell, value };
+            });
+        }
+
+        async function saveInvoice2Workbook() {
+            const file = getInvoice2WorkbookFile();
+            if (!file || !invoice2Workbook) return;
+            showProgress('正在保存报销单修改...', 50);
+            try {
+                const result = await pywebview.api.save_reimbursement_workbook(file.path, getInvoice2WorkbookEdits());
+                if (!result.success) throw new Error(result.error || '保存失败');
+                invoice2Workbook = result;
+                invoice2WorkbookEdits.clear();
+                renderInvoice2Workbook();
+                document.getElementById('invoice2FormStatus').textContent = '出租车报销单修改已保存';
+            } catch (error) {
+                alert('保存报销单失败: ' + error.message);
+            } finally {
+                hideProgress();
+            }
+        }
+
+        function loadInvoice2PrintWorkspace(files) {
+            clearAll();
+            sourceFiles = files;
+            const pages = [];
+            files.forEach(file => {
+                for (let index = 0; index < file.page_count; index++) pages.push({
+                    id: generateUUID(), path: file.path, pageIndex: index, fileName: file.name,
+                    rotation: 0, fullPage: Boolean(file.full_page)
+                });
+            });
+            allPages = pages;
+            document.querySelector('input[name="mergeMode"][value="invoice"]').checked = true;
+            switchAppMode();
+            renderSourceList();
+            document.getElementById('emptyState').style.display = 'none';
+            renderPageGrid();
+            loadThumbnails(pages);
+            updateStats();
+        }
+
+        async function sendInvoice2ToPrint() {
+            const directPrint = document.getElementById('invoice2DirectPrint').checked;
+            showProgress('正在载入打印工作台...', 35);
+            try {
+                let result;
+                if (invoice2Category === '出租车报销单') {
+                    const file = getInvoice2WorkbookFile();
+                    if (!file) { alert('当前结果没有出租车报销单'); return; }
+                    result = await pywebview.api.prepare_reimbursement_print(file.path, getInvoice2WorkbookEdits());
+                    if (!result.success) throw new Error(result.error || '报销单打印文件生成失败');
+                    invoice2WorkbookEdits.clear();
+                    loadInvoice2PrintWorkspace([{
+                        path: result.path, name: result.name,
+                        page_count: result.page_count, full_page: true
+                    }]);
+                } else {
+                    const filePaths = [];
+                    const seenPaths = new Set();
+                    getCurrentInvoice2Rows().forEach(row => {
+                        if (row.path && !seenPaths.has(row.path)) {
+                            seenPaths.add(row.path);
+                            filePaths.push(row.path);
+                        }
+                    });
+                    if (!filePaths.length) { alert('没有可打印的分类发票'); return; }
+                    result = await pywebview.api.get_reimbursement_print_files(filePaths);
+                    if (!result.success || !result.files.length) { alert(result.error || '没有可载入的发票'); return; }
+                    loadInvoice2PrintWorkspace(result.files);
+                }
+            } catch (error) {
+                alert('载入打印工作台失败: ' + error.message);
+                return;
+            } finally {
+                hideProgress();
+            }
+            if (directPrint) await directPrintPages();
         }
 
         function toggleConfigBtn() {
@@ -1408,49 +1563,14 @@ html_content = """
             // 关闭模态框
             closeModal('resultModal');
             closeModal('statisticsModal');
-            
-            // 切换到review视图
-            document.getElementById('workspaceView').style.display = 'none';
-            document.getElementById('reviewView').style.display = 'flex';
-            document.getElementById('btnBackEdit').style.display = 'block';
-            
-            const c = document.getElementById('reviewContent');
-            c.innerHTML = '<div style="color:white; margin-top:50px;">正在加载发票...</div>';
-            
-            if (reviewObserver) reviewObserver.disconnect();
-            
-            c.innerHTML = '';
-            currentReviewZoom = 1.0;
-            updateReviewZoomUI();
-            
-            const div = document.createElement('div');
-            div.className = 'review-page';
-            div.style.width = BASE_WIDTH + 'px';
-            div.dataset.path = sourceFile.path;
-            div.dataset.index = pageNum;
-            
-            const img = document.createElement('img');
-            img.alt = `${fileName} - P${pageNum + 1}`;
-            img.src = '';
-            div.innerHTML += '<span class="review-loading">正在加载...</span>';
-            
-            div.appendChild(img);
-            c.appendChild(div);
-            
-            // 加载高清图（单页预览使用 4.0 清晰度）
-            const res = await pywebview.api.get_page_image(sourceFile.path, pageNum, 4.0);
-            if (res.success) {
-                img.src = res.image;
-                img.dataset.status = 'hd';
-                const loading = div.querySelector('.review-loading');
-                if (loading) loading.remove();
-            } else {
-                alert('加载发票失败');
-                switchToWorkspace();
-            }
-            
-            // 保存当前预览的文件路径
-            currentReviewFilePath = sourceFile.path;
+
+            const page = allPages.find(item => item.path === sourceFile.path && item.pageIndex === pageNum) || {
+                path: sourceFile.path,
+                pageIndex: pageNum,
+                fileName,
+                rotation: 0
+            };
+            await loadPagesReview([page]);
         }
 
         // 报销单复制功能
@@ -1981,7 +2101,7 @@ html_content = """
         window.addEventListener('mousemove', (e) => { if (!isSelecting) return; const c = getRelativeCoordinates(e, workspace); const w = Math.abs(c.x - startX); const h = Math.abs(c.y - startY); const l = Math.min(c.x, startX); const t = Math.min(c.y, startY); selectionBox.style.width = w + 'px'; selectionBox.style.height = h + 'px'; selectionBox.style.left = l + 'px'; selectionBox.style.top = t + 'px'; checkSelection(l, t, w, h, e.ctrlKey); });
         window.addEventListener('mouseup', () => { if (isSelecting) { isSelecting = false; selectionBox.style.display = 'none'; updateBatchToolbar(); } });
         function checkSelection(l, t, w, h, isCtrl) { const r = l + w; const b = t + h; const ws = workspace.getBoundingClientRect(); document.querySelectorAll('.page-card').forEach(c => { const cr = c.getBoundingClientRect(); const cl = cr.left - ws.left + workspace.scrollLeft; const ct = cr.top - ws.top + workspace.scrollTop; if (!(r < cl || l > (cl + cr.width) || b < ct || t > (ct + cr.height))) { selectedPageIds.add(c.dataset.id); c.classList.add('selected'); } }); }
-        function onCardClick(e, id) { e.stopPropagation(); if (e.ctrlKey) { if (selectedPageIds.has(id)) { selectedPageIds.delete(id); document.querySelector(`.page-card[data-id="${id}"]`).classList.remove('selected'); } else { selectedPageIds.add(id); document.querySelector(`.page-card[data-id="${id}"]`).classList.add('selected'); } } else { clearSelection(); selectedPageIds.add(id); document.querySelector(`.page-card[data-id="${id}"]`).classList.add('selected'); } updateBatchToolbar(); }
+        function onCardClick(e, id) { e.stopPropagation(); if (e.ctrlKey) { if (selectedPageIds.has(id)) { selectedPageIds.delete(id); document.querySelector(`.page-card[data-id="${id}"]`).classList.remove('selected'); } else { selectedPageIds.add(id); document.querySelector(`.page-card[data-id="${id}"]`).classList.add('selected'); } } else if (!(selectedPageIds.size > 1 && selectedPageIds.has(id))) { clearSelection(); selectedPageIds.add(id); document.querySelector(`.page-card[data-id="${id}"]`).classList.add('selected'); } updateBatchToolbar(); }
         function clearSelection() { selectedPageIds.clear(); document.querySelectorAll('.page-card.selected').forEach(el => el.classList.remove('selected')); updateBatchToolbar(); }
         function selectAllPages() {
             allPages.forEach(page => selectedPageIds.add(page.id));
@@ -2086,41 +2206,70 @@ html_content = """
         });
         function renderPageGrid() { const g = document.getElementById('pageGrid'); const c = {}; g.querySelectorAll('.page-card img').forEach(i => { if (i.src && i.src.startsWith('data:')) c[i.id.replace('img-', '')] = i.src; }); g.innerHTML = ''; allPages.forEach(p => { const d = document.createElement('div'); d.className = 'page-card'; d.draggable = true; d.dataset.id = p.id; const src = c[p.id] || ''; const op = src ? 'opacity:1' : 'opacity:0.3'; d.innerHTML = `<div class="check-mark">✓</div><div class="card-preview"><img id="img-${p.id}" src="${src}" style="${op}; transform: rotate(${p.rotation||0}deg)"></div><div class="card-info" title="${p.fileName}">${p.fileName} - P${p.pageIndex + 1}</div>`; d.onclick = (e) => onCardClick(e, p.id); d.ondblclick = (e) => { e.stopPropagation(); loadSinglePageReview(p); }; addDragEvents(d); g.appendChild(d); }); }
         
+        function getSelectedPagesInWorkspaceOrder() {
+            return allPages.filter(page => selectedPageIds.has(page.id));
+        }
+
+        function previewSelectedPages() {
+            const pages = getSelectedPagesInWorkspaceOrder();
+            if (!pages.length) {
+                alert('请先选择要预览的页面');
+                return;
+            }
+            loadPagesReview(pages);
+        }
+
         async function loadSinglePageReview(page) {
+            const pages = selectedPageIds.size > 1 && selectedPageIds.has(page.id)
+                ? getSelectedPagesInWorkspaceOrder()
+                : [page];
+            return loadPagesReview(pages);
+        }
+
+        async function loadPagesReview(pages) {
+            if (!pages || !pages.length) return;
+            ImageQueue.clear();
+            currentReviewFilePath = null;
+            currentReviewPages = pages.map(page => ({
+                path: page.path,
+                page_index: page.pageIndex,
+                rotation: page.rotation || 0,
+                full_page: Boolean(page.fullPage)
+            }));
             document.getElementById('workspaceView').style.display = 'none'; 
             document.getElementById('reviewView').style.display = 'flex'; 
             document.getElementById('btnBackEdit').style.display = 'block';
+            document.getElementById('reviewTitle').textContent = `${pages.length} 页预览 (Ctrl+滚轮缩放)`;
             const c = document.getElementById('reviewContent'); 
-            c.innerHTML = '<div style="color:white; margin-top:50px;">正在加载页面...</div>';
             if (reviewObserver) reviewObserver.disconnect();
             
             c.innerHTML = ''; 
             currentReviewZoom = 1.0; 
             updateReviewZoomUI();
-            
-            const div = document.createElement('div'); 
-            div.className = 'review-page'; 
-            div.style.width = BASE_WIDTH + 'px'; 
-            div.dataset.path = page.path; 
-            div.dataset.index = page.pageIndex;
-            
-            const cachedSrc = document.getElementById(`img-${page.id}`)?.src;
-            const img = document.createElement('img'); 
-            img.alt = `Page ${page.pageIndex + 1}`;
-            
-            if (cachedSrc && cachedSrc.startsWith('data:')) { 
-                img.src = cachedSrc; 
-                img.dataset.status = 'thumb'; 
-            } else { 
-                img.src = ''; 
-                div.innerHTML += '<span class="review-loading">等待加载...</span>'; 
-            }
-            
-            div.appendChild(img); 
-            c.appendChild(div);
-            
-            // 加载高清图（单页预览使用 4.0 清晰度）
-            loadHighResImage(div, img, 4.0);
+
+            pages.forEach(page => {
+                const div = document.createElement('div');
+                div.className = 'review-page';
+                div.style.width = BASE_WIDTH + 'px';
+                div.dataset.path = page.path;
+                div.dataset.index = page.pageIndex;
+
+                const cachedSrc = document.getElementById(`img-${page.id}`)?.src;
+                const img = document.createElement('img');
+                img.alt = `${page.fileName || 'Page'} - P${page.pageIndex + 1}`;
+
+                if (cachedSrc && cachedSrc.startsWith('data:')) {
+                    img.src = cachedSrc;
+                    img.dataset.status = 'thumb';
+                } else {
+                    img.src = '';
+                    div.innerHTML += '<span class="review-loading">等待加载...</span>';
+                }
+
+                div.appendChild(img);
+                c.appendChild(div);
+                loadHighResImage(div, img, 4.0);
+            });
         }
         
         async function startMerge() { 
@@ -2150,7 +2299,10 @@ html_content = """
             
             showProgress('正在合并...', 50); 
             const m = document.querySelector('input[name="mergeMode"]:checked').value; 
-            const d = pagesToMerge.map(p => ({ path: p.path, page_index: p.pageIndex, rotation: p.rotation })); 
+            const d = pagesToMerge.map(p => ({
+                path: p.path, page_index: p.pageIndex, rotation: p.rotation,
+                full_page: Boolean(p.fullPage)
+            }));
             
             setTimeout(async () => { 
                 const r = await pywebview.api.merge_pages(d, o, m); 
@@ -2215,7 +2367,7 @@ html_content = """
             document.body.appendChild(iframe);
         }
 
-        async function directPrintInvoices() {
+        async function directPrintPages() {
             const button = document.getElementById('btnDirectPrint');
             const originalText = button.innerText;
             const pagesToPrint = selectedPageIds.size > 0
@@ -2231,12 +2383,16 @@ html_content = """
             button.innerText = '处理中...';
             showProgress('正在合并并准备打印...', 50);
             try {
+                const mode = document.querySelector('input[name="mergeMode"]:checked').value;
                 const pages = pagesToPrint.map(page => ({
                     path: page.path,
                     page_index: page.pageIndex,
-                    rotation: page.rotation
+                    rotation: page.rotation,
+                    full_page: Boolean(page.fullPage)
                 }));
-                const result = await pywebview.api.merge_invoice_for_print(pages);
+                const result = mode === 'invoice'
+                    ? await pywebview.api.merge_invoice_for_print(pages)
+                    : await pywebview.api.merge_pages_for_print(pages);
                 if (!result.success) throw new Error(result.error || '生成打印文件失败');
 
                 document.getElementById('progressFill').style.width = '100%';
@@ -2302,6 +2458,8 @@ html_content = """
             ImageQueue.clear();
             
             currentReviewFilePath = path;  // 保存当前预览的文件路径
+            currentReviewPages = [];
+            document.getElementById('reviewTitle').textContent = '检查文件 (Ctrl+滚轮缩放)';
             
             // 切换到预览视图
             document.getElementById('workspaceView').style.display = 'none';
@@ -2443,6 +2601,7 @@ html_content = """
             document.getElementById('workspaceView').style.display = 'flex'; 
             document.getElementById('btnBackEdit').style.display = 'none'; 
             currentReviewFilePath = null; 
+            currentReviewPages = [];
             
             // 如果是从模态框跳转过来的，重新打开模态框
             if (previewSourceModal) {
@@ -2452,16 +2611,34 @@ html_content = """
         }
         
         async function printCurrentFile() {
-            if (!currentReviewFilePath) {
+            if (!currentReviewFilePath && currentReviewPages.length === 0) {
                 alert('没有可打印的文件');
                 return;
             }
-            
-            console.log('🖨️ 准备打印文件:', currentReviewFilePath);
-            
+
             const btn = document.querySelector('.review-toolbar button[onclick="printCurrentFile()"]');
             const originalText = btn ? btn.innerText : '🖨️ 打印';
-            if (btn) btn.innerText = '⌛ 处理中...';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = '⌛ 处理中...';
+            }
+
+            if (currentReviewPages.length > 0) {
+                try {
+                    const result = await pywebview.api.merge_pages_for_print(currentReviewPages);
+                    if (!result.success) throw new Error(result.error || '生成打印文件失败');
+                    printPdfData(result.data, btn, originalText);
+                } catch (error) {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerText = originalText;
+                    }
+                    alert('打印失败: ' + error.message);
+                }
+                return;
+            }
+
+            console.log('🖨️ 准备打印文件:', currentReviewFilePath);
             
             try {
                 let pdfData = null;
@@ -2485,7 +2662,10 @@ html_content = """
                     const result = await pywebview.api.print_pdf(currentReviewFilePath);
                     if (!result.success) {
                         alert('打印失败: ' + result.error);
-                        if (btn) btn.innerText = originalText;
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerText = originalText;
+                        }
                         return;
                     }
                     pdfData = result.data;
@@ -2497,7 +2677,10 @@ html_content = """
                 
                 if (!blobUrl) {
                     alert('没有可以打印的文件');
-                    if (btn) btn.innerText = originalText;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerText = originalText;
+                    }
                     return;
                 }
                 
@@ -2540,7 +2723,10 @@ html_content = """
                         doPrint();
                         
                         // 恢复按钮
-                        if (btn) btn.innerText = originalText;
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerText = originalText;
+                        }
                         
                         // 延迟清理
                         setTimeout(() => {
@@ -2565,13 +2751,19 @@ html_content = """
                     if (!window.mergedFilesCache || !window.mergedFilesCache[currentReviewFilePath]) {
                         URL.revokeObjectURL(blobUrl);
                     }
-                    if (btn) btn.innerText = originalText;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerText = originalText;
+                    }
                 };
                 
             } catch (e) {
                 console.error('打印出错:', e);
                 alert('程序错误: ' + e.message);
-                if (btn) btn.innerText = originalText;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                }
             }
         }
         

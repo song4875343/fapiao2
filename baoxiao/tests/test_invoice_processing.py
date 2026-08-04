@@ -1,14 +1,21 @@
+import base64
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from openpyxl import load_workbook
+try:
+    from PyPDF2 import PdfReader, PdfWriter
+except ImportError:
+    from pypdf import PdfReader, PdfWriter
 
 import invoice_processor
 import ordinary_invoice
 import taxi_reimbursement
 import taxi_planner
+import reimbursement_workbook
+import pdfm_v3
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -192,6 +199,102 @@ class InvoiceProcessingTests(unittest.TestCase):
             self.assertEqual(len(split_colors), 1)
             self.assertEqual(form.active["F19"].value, 260.00)
             self.assertEqual(form.active["G3"].value, "票据 1 张")
+
+    def test_double_page_form_is_editable_and_prints_one_sheet_per_page(self):
+        rows = [
+            {
+                "target_date": f"2026-07-{index:02d}",
+                "origin": "起点",
+                "destination": "终点",
+                "amount": 10,
+                "note": "改写",
+                "source": {"index": index},
+            }
+            for index in range(1, 14)
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            form_path = Path(temp_dir) / reimbursement_workbook.FORM_NAME
+            taxi_planner.export_fixed_templates(
+                rows,
+                ROOT / "出租车报销单模板.xlsx",
+                ROOT / "出租车报销单双页模板.xlsx",
+                double_path=form_path,
+            )
+            form = load_workbook(form_path, data_only=False)
+            self.assertIsNone(form.active["H6"].value)
+            self.assertIsNone(form.active["H27"].value)
+            self.assertEqual(form.active["A2"].alignment.horizontal, "center")
+            self.assertEqual(form.active["A23"].alignment.horizontal, "center")
+
+            payload = reimbursement_workbook.workbook_payload(form_path)
+            self.assertEqual(len(payload["sheets"]), 1)
+            result = reimbursement_workbook.save_edits(form_path, [
+                {"sheet": "出租车报销单1", "cell": "D6", "value": "新起点"},
+                {"sheet": "出租车报销单1", "cell": "F6", "value": "99.50"},
+            ])
+            self.assertTrue(result["success"])
+            edited = load_workbook(form_path, data_only=False).active
+            self.assertEqual(edited["D6"].value, "新起点")
+            self.assertEqual(edited["F6"].value, 99.5)
+            self.assertEqual(edited["F39"].value, 219.5)
+            self.assertEqual(edited["G3"].value, "票据 12 张")
+            self.assertEqual(edited["G24"].value, "票据 1 张")
+
+            printed = reimbursement_workbook.render_pdf(form_path)
+            pdf_page = PdfReader(printed["path"]).pages[0]
+            self.assertEqual(len(PdfReader(printed["path"]).pages), 1)
+            self.assertAlmostEqual(float(pdf_page.mediabox.width), 595.2756, places=2)
+            self.assertAlmostEqual(float(pdf_page.mediabox.height), 841.8898, places=2)
+
+    def test_precomposed_reimbursement_page_bypasses_two_up_scaling(self):
+        import fitz
+        import pdfm_v3
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "source.pdf"
+            output_path = Path(temp_dir) / "output.pdf"
+            source = fitz.open()
+            page = source.new_page(width=595, height=842)
+            page.insert_text((80, 200), "FULL PAGE", fontsize=20)
+            source.save(source_path)
+            source.close()
+
+            api = pdfm_v3.PDFMergerAPI(mode="local")
+            api._merge_invoice_by_pages([{
+                "path": str(source_path), "page_index": 0,
+                "rotation": 0, "full_page": True,
+            }], str(output_path))
+            result = fitz.open(output_path)
+            try:
+                self.assertEqual(result.page_count, 1)
+                blocks = [block for block in result[0].get_text("blocks") if "FULL PAGE" in block[4]]
+                self.assertEqual(len(blocks), 1)
+                self.assertGreater(blocks[0][1], 170)
+            finally:
+                result.close()
+
+    def test_normal_print_keeps_selected_pages_as_separate_pages(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_path = Path(temp_dir) / "source.pdf"
+            source = PdfWriter()
+            source.add_blank_page(width=300, height=400)
+            source.add_blank_page(width=500, height=600)
+            with source_path.open("wb") as stream:
+                source.write(stream)
+
+            result = pdfm_v3.PDFMergerAPI(mode="local").merge_pages_for_print([
+                {"path": str(source_path), "page_index": 1, "rotation": 0},
+                {"path": str(source_path), "page_index": 0, "rotation": 90},
+            ])
+            self.assertTrue(result["success"])
+            encoded = result["data"].split(",", 1)[1]
+            output_path = Path(temp_dir) / "printed.pdf"
+            output_path.write_bytes(base64.b64decode(encoded))
+            printed = PdfReader(str(output_path))
+            self.assertEqual(len(printed.pages), 2)
+            self.assertAlmostEqual(float(printed.pages[0].mediabox.width), 500)
+            self.assertAlmostEqual(float(printed.pages[0].mediabox.height), 600)
+            self.assertEqual(printed.pages[1].get("/Rotate"), 90)
 
 
 if __name__ == "__main__":

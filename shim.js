@@ -69,8 +69,9 @@
     const autoMethods = [
         'get_file_info', 'get_page_image', 'get_page_size_categories', 'normalize_page_sizes', 'get_routes', 'save_routes',
         'generate_reimbursement_form', 'generate_train_ticket_form', 'calculate_invoice_amounts',
-        'print_pdf', 'merge_invoice_for_print', 'clear_files', 'select_directory', 'process_reimbursement',
-        'get_reimbursement_print_files'
+        'print_pdf', 'merge_pages_for_print', 'merge_invoice_for_print', 'clear_files', 'select_directory', 'process_reimbursement',
+        'get_reimbursement_print_files', 'get_reimbursement_workbook',
+        'save_reimbursement_workbook', 'prepare_reimbursement_print'
     ];
     
     // 自动生成所有方法的 HTTP 调用
@@ -90,6 +91,10 @@
                     'calculate_invoice_amounts': ['pages_info'],
                     'process_reimbursement': ['options'],
                     'get_reimbursement_print_files': ['file_paths'],
+                    'get_reimbursement_workbook': ['file_path'],
+                    'save_reimbursement_workbook': ['file_path', 'edits'],
+                    'prepare_reimbursement_print': ['file_path', 'edits'],
+                    'merge_pages_for_print': ['page_list'],
                     'merge_invoice_for_print': ['page_list'],
                     'print_pdf': ['file_path']
                 };

@@ -1,8 +1,10 @@
 """High-speed-rail based taxi trip planning and fixed-template exports."""
 
 from pathlib import Path
+from copy import copy
 
 from openpyxl import load_workbook
+from openpyxl.styles import Alignment
 
 
 def _city(value):
@@ -149,8 +151,7 @@ def _fill_form(sheet, rows, start_row, end_row, title_row, date_row, total_row, 
         if source_key is not None:
             seen_sources.add(source_key)
         values = (sequence_start + offset, 1, item.get("target_date", ""), item.get("origin", ""),
-                  item.get("destination", ""), item.get("amount", ""), ticket_count,
-                  item.get("note", ""))
+                  item.get("destination", ""), item.get("amount", ""), ticket_count, "")
         for col, value in enumerate(values, 1):
             sheet.cell(row, col).value = value
     total = sum(float(item.get("amount") or 0) for item in (total_rows if total_rows is not None else rows))
@@ -178,6 +179,16 @@ def export_fixed_templates(rows, single_template, double_template, single_path=N
         sheets.append(wb.copy_worksheet(wb.active))
     for index, (sheet, chunk) in enumerate(zip(sheets, chunks), 1):
         sheet.title = f"出租车报销单{index}"
+        for coordinate in ("A2", "A23"):
+            cell = sheet[coordinate]
+            cell.alignment = copy(cell.alignment)
+            cell.alignment = Alignment(
+                horizontal="center", vertical=cell.alignment.vertical or "center",
+                wrap_text=cell.alignment.wrap_text,
+                text_rotation=cell.alignment.text_rotation,
+                shrink_to_fit=cell.alignment.shrink_to_fit,
+                indent=cell.alignment.indent,
+            )
         sequence_start = (index - 1) * 24 + 1
         if len(chunk) <= 12:
             _fill_form(sheet, chunk, 6, 17, 1, 3, 18, 19, sequence_start=sequence_start)

@@ -1,0 +1,38 @@
+============================================================
+🚀 启动 FastAPI 服务器模式...
+============================================================
+📁 临时文件目录: C:\Users\GIGABYTE\AppData\Local\Temp\pdfm_server
+✅ 注册路由: /api/calculate_invoice_amounts
+✅ 注册路由: /api/clear_files
+✅ 注册路由: /api/download_merged_pdf
+✅ 注册路由: /api/generate_reimbursement_form
+✅ 注册路由: /api/generate_train_ticket_form
+✅ 注册路由: /api/get_file_info
+✅ 注册路由: /api/get_page_image
+✅ 注册路由: /api/get_page_size_categories
+✅ 注册路由: /api/get_reimbursement_print_files
+✅ 注册路由: /api/get_reimbursement_workbook
+✅ 注册路由: /api/get_routes
+✅ 注册路由: /api/merge_invoice_for_print
+✅ 注册路由: /api/merge_pages
+✅ 注册路由: /api/normalize_page_sizes
+✅ 注册路由: /api/prepare_reimbursement_print
+✅ 注册路由: /api/print_pdf
+✅ 注册路由: /api/process_reimbursement
+✅ 注册路由: /api/save_csv_data
+✅ 注册路由: /api/save_csv_dialog
+✅ 注册路由: /api/save_file_dialog
+✅ 注册路由: /api/save_reimbursement_csv
+✅ 注册路由: /api/save_reimbursement_workbook
+✅ 注册路由: /api/save_routes
+✅ 注册路由: /api/save_statistics_csv
+✅ 注册路由: /api/save_train_ticket_csv
+✅ 注册路由: /api/select_directory
+✅ 注册路由: /api/select_pdfs
+============================================================
+🌐 访问地址: http://localhost:8765
+============================================================
+INFO:     127.0.0.1:52323 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63480 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63480 - "GET /shim.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51184 - "GET / HTTP/1.1" 200 OK
